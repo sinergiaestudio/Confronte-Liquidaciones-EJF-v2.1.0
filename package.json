@@ -7,8 +7,13 @@
   },
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
+    "prepare:ocr": "node scripts/prepare-ocr-assets.mjs",
+    "predev": "npm run prepare:ocr",
+    "prebuild": "npm run prepare:ocr",
+    "prebuild:pages": "npm run prepare:ocr",
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
     "build": "bash scripts/build-verified.sh",
+    "build:pages": "GITHUB_PAGES=true next build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run test:unit && npm run build && node --test tests/rendered-html.test.mjs",
     "test:unit": "node --import tsx --test tests/domain.test.ts",

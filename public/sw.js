@@ -1,4 +1,6 @@
-const CACHE_NAME = "confronte-ejf-v2";
+const CACHE_NAME = "confronte-ejf-v2.1";
+const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
+const scoped = (path) => `${SCOPE_PATH}${path}`;
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -8,7 +10,7 @@ const APP_SHELL = [
   "/ocr/tesseract-core-lstm.wasm.js",
   "/ocr/tesseract-core-lstm.wasm",
   "/ocr/spa.traineddata.gz",
-];
+].map(scoped);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -28,7 +30,7 @@ self.addEventListener("fetch", (event) => {
       const copy = response.clone();
       caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
       return response;
-    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match("/"))));
+    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match(scoped("/")))));
     return;
   }
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {

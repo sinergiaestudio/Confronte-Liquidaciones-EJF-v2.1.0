@@ -4,6 +4,8 @@ Aplicación web para comparar constancias de deuda y liquidaciones mandatarias, 
 
 **Aplicación en línea:** [confronte-liquidaciones-ejf.arielmarcelogomez7.chatgpt.site](https://confronte-liquidaciones-ejf.arielmarcelogomez7.chatgpt.site)
 
+**Edición pública en GitHub Pages:** [sinergiaestudio.github.io/Confronte-Liquidaciones-EJF-v2.1.0](https://sinergiaestudio.github.io/Confronte-Liquidaciones-EJF-v2.1.0/)
+
 > Herramienta de asistencia para el control judicial. No reemplaza la revisión profesional ni constituye un sistema oficial del Consejo de la Magistratura de la CABA.
 
 ## Qué cambió en la versión 2
@@ -110,6 +112,10 @@ npm run audit:pdf -- /ruta/local/a/pdfs
 ```
 
 `audit:pdf` imprime únicamente perfil, cantidad de filas, confianza y bloqueos. No modifica los PDFs ni genera fixtures con datos reales.
+
+## Publicación en GitHub Pages
+
+Cada actualización de la rama `main` ejecuta pruebas y genera automáticamente la edición estática de GitHub Pages. Los recursos de OCR se reconstruyen desde las dependencias fijadas en `package-lock.json`; no se versionan binarios generados ni documentos judiciales.
 
 ## Criterio de aceptación
 

@@ -1,4 +1,5 @@
 import { clamp, stableId } from "../domain/normalize";
+import { publicPath } from "../domain/public-path";
 import type { ExtractedPage, ExtractionResult } from "../domain/types";
 
 export type ExtractionProgress = (message: string, progress: number) => void;
@@ -90,9 +91,9 @@ export async function extractPdfWithOcr(file: File, onProgress?: ExtractionProgr
   const pdf = await pdfjs.getDocument({ data: bytes }).promise;
   let currentPage = 0;
   const makeWorker = async () => createWorker("spa", undefined, {
-    workerPath: "/ocr/worker.min.js",
-    corePath: "/ocr/tesseract-core-lstm.wasm.js",
-    langPath: "/ocr",
+    workerPath: publicPath("/ocr/worker.min.js"),
+    corePath: publicPath("/ocr/tesseract-core-lstm.wasm.js"),
+    langPath: publicPath("/ocr"),
     logger: (message) => {
       if (message.status === "recognizing text" && typeof message.progress === "number") {
         const overall = 0.08 + ((currentPage + message.progress) / pdf.numPages) * 0.88;
