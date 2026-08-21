@@ -1,0 +1,12 @@
+{
+  "name": "Confronte de Liquidaciones EJF",
+  "short_name": "Confronte EJF",
+  "description": "Control local y trazable de constancias de deuda y liquidaciones mandatarias.",
+  "lang": "es-AR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1ed",
+  "theme_color": "#4f0d18",
+  "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
+
