@@ -41,7 +41,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body>
-        <Script src={publicPath("/sec29-embed-bridge.js")} strategy="beforeInteractive" />
+        <Script src={`${publicPath("/sec29-embed-bridge.js")}?v=6`} strategy="beforeInteractive" />
         <ServiceWorkerRegistration />
         {children}
       </body>
