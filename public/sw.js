@@ -1,4 +1,4 @@
-const CACHE_NAME = "confronte-ejf-v2.1.2";
+const CACHE_NAME = "confronte-ejf-v2.1.3";
 const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const scoped = (path) => `${SCOPE_PATH}${path}`;
 const APP_SHELL = [
@@ -30,9 +30,12 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
-  const isEmbedBridge = requestUrl.pathname.endsWith("/sec29-embed-bridge.js");
+  const isSec29Shell =
+    requestUrl.pathname.endsWith("/sec29-embed-bridge.js") ||
+    requestUrl.pathname.endsWith("/sec29-suite-loader.js") ||
+    requestUrl.pathname.endsWith("/sec29-suite-shell.js");
 
-  if (isEmbedBridge) {
+  if (isSec29Shell) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
