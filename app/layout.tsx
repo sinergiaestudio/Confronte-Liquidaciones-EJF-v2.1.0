@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
+import "./sec29-suite.css";
 import { ServiceWorkerRegistration } from "./components/ServiceWorkerRegistration";
+import { Sec29SuiteShell } from "./components/Sec29SuiteShell";
 import { publicPath } from "../lib/domain/public-path";
 
 const githubOwner = process.env.GITHUB_REPOSITORY_OWNER ?? "sinergiaestudio";
@@ -39,10 +40,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <body>
-        <Script src={`${publicPath("/sec29-suite-loader.js")}?v=64`} strategy="beforeInteractive" />
-        <Script src={`${publicPath("/sec29-embed-bridge.js")}?v=6`} strategy="beforeInteractive" />
+        <Sec29SuiteShell />
         <ServiceWorkerRegistration />
         {children}
       </body>
