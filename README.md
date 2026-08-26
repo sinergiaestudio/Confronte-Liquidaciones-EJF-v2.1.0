@@ -1,132 +1,206 @@
-# Confronte de Liquidaciones EJF
+<p align="center">
+  <img src="docs/readme/confronte-logo.svg" alt="Confronte de Liquidaciones EJF" width="780">
+</p>
 
-Aplicación web para comparar constancias de deuda y liquidaciones mandatarias, revisar la lectura de los PDFs y recalcular intereses con trazabilidad por período.
+<h2 align="center">Dos documentos. Una verificación trazable.</h2>
 
-**Aplicación en línea:** [confronte-liquidaciones-ejf.arielmarcelogomez7.chatgpt.site](https://confronte-liquidaciones-ejf.arielmarcelogomez7.chatgpt.site)
+<p align="center">
+  Control local de constancias de deuda, liquidaciones mandatarias e intereses en ejecuciones fiscales.
+</p>
 
-**Edición pública en GitHub Pages:** [sinergiaestudio.github.io/Confronte-Liquidaciones-EJF-v2.1.0](https://sinergiaestudio.github.io/Confronte-Liquidaciones-EJF-v2.1.0/)
+<p align="center">
+  <a href="https://sinergiaestudio.github.io/Confronte-Liquidaciones-EJF-v2.1.0/"><strong>Abrir edición pública</strong></a>
+  ·
+  <a href="https://confronte-liquidaciones-ejf.arielmarcelogomez7.chatgpt.site">Abrir aplicación principal</a>
+  ·
+  <a href="https://sinergiaestudio.github.io/herramientas-j15sec29/">Herramientas SEC29</a>
+  ·
+  <a href="#privacidad-y-alcance">Privacidad</a>
+</p>
 
-> Herramienta de asistencia para el control judicial. No reemplaza la revisión profesional ni constituye un sistema oficial del Consejo de la Magistratura de la CABA.
+<p align="center">
+  <img alt="versión" src="https://img.shields.io/badge/versión-2.1.0-821529">
+  <img alt="Next y TypeScript" src="https://img.shields.io/badge/Next%20%2B%20TypeScript-aplicación-365F91">
+  <img alt="OCR local" src="https://img.shields.io/badge/OCR-español%20local-2F7D5C">
+  <img alt="PWA" src="https://img.shields.io/badge/PWA-instalable-B99655">
+  <img alt="datos locales" src="https://img.shields.io/badge/PDFs-no%20se%20suben-687386">
+</p>
 
-## Qué cambió en la versión 2
+---
 
-La versión histórica concentraba interfaz, lectura binaria de PDF, reglas de negocio y exportación en un único HTML. La nueva versión separa esas responsabilidades y reemplaza la reconstrucción artesanal del PDF por una canalización verificable:
+## Qué es Confronte EJF
 
-1. `pdf.js` extrae texto y coordenadas.
-2. La aplicación reconstruye renglones por posición visual.
-3. Un clasificador selecciona el perfil documental.
-4. Un parser específico normaliza metadatos y deuda.
-5. La grilla editable distingue lectura, inferencia y confirmación humana.
-6. El confronte controla identidad, integridad nominal y cálculo.
+Confronte de Liquidaciones EJF es una aplicación web para comparar una **constancia de deuda** con una **liquidación mandataria**, revisar la lectura de ambos PDFs y recalcular intereses con desarrollo por posición y por período.
 
-Los PDFs se procesan dentro del navegador. No se envían a un servidor.
+La aplicación no se limita a declarar si dos totales coinciden. Separa el trabajo en capas verificables:
 
-## Funciones principales
+1. extrae texto y coordenadas del PDF;
+2. clasifica el perfil documental;
+3. reconstruye metadatos, posiciones y comprobantes;
+4. permite corregir la lectura antes del cálculo;
+5. controla identidad e integridad nominal;
+6. recalcula intereses con tasas y fechas visibles;
+7. compara cada componente informado con el calculado.
 
-- lectura local de PDFs con capa de texto;
-- detección automática de PDFs escaneados;
-- OCR en español, íntegramente empaquetado en la aplicación;
-- revisión y corrección de metadatos y renglones;
-- recuperación explícita de filas desde el documento contraparte;
-- controles de correspondencia por adjudicación, certificado y estructura de la deuda;
-- normalización de posiciones y comprobantes;
-- reconocimiento de ejecuciones especiales desde cualquiera de los dos documentos;
-- recálculo estándar, capitalización por comprobantes o posiciones y deuda única;
-- resumen general y desarrollo desplegable por posición y por tramo;
-- importes con centavos y formato argentino (`$153.000,22`);
-- tolerancia operativa visible del 5%;
-- bloqueo cuando las tasas no cubren todo el período;
-- sesión JSON, CSV e informe imprimible;
-- PWA instalable y disponible sin conexión después de la primera carga.
+> **Leer, revisar, calcular y explicar: cada conclusión debe conservar su rastro.**
+
+## Vista funcional
+
+<p align="center">
+  <img src="docs/readme/confronte-overview.svg" alt="Flujo de control de Confronte EJF entre dos documentos y un cálculo trazable" width="100%">
+</p>
+
+## Qué controla
+
+| Capa | Control | Evidencia visible |
+|---|---|---|
+| **Identidad** | Contribuyente, certificado, adjudicación y datos generales. | Comparación de metadatos extraídos y corregidos. |
+| **Integridad nominal** | Posiciones, comprobantes, capitales, vencimientos y filas faltantes. | Grilla editable y recuperación desde el documento contraparte. |
+| **Tipo de ejecución** | Estándar, capitalización por facturas, capitalización por posiciones o deuda única. | Perfil detectado y reglas aplicadas. |
+| **Intereses** | Resarcitorios, punitorios, capitalización y tramos posteriores. | Fechas, días, tasa mensual, capital base e importe por tramo. |
+| **Resultado** | Diferencias entre lo informado y lo calculado. | Resumen general y desarrollo desplegable por posición. |
 
 ## Perfiles documentales
 
-| Perfil | Constancia | Liquidación | Control principal |
-|---|---:|---:|---|
-| AGIP estándar | Sí | Sí | Posición, vencimiento y capital |
-| AGIP histórica | Sí | Sí | Cuotas partidas, continuaciones verticales y OCR defectuoso |
-| Capitalización por facturas | Sí | Sí | Comprobante canónico, mora y capital |
-| Capitalización por posiciones | Sí | Sí | Posición y base capitalizada |
-| Deuda única / cálculo combinado | Sí | Sí | Capital, fechas y tramos resarcitorio/punitorio |
+| Perfil | Documentos admitidos | Clave de comparación |
+|---|---|---|
+| **AGIP estándar** | Constancia y liquidación | Posición, vencimiento y capital. |
+| **AGIP histórica** | Constancia y liquidación | Cuotas partidas, continuaciones verticales y OCR defectuoso. |
+| **Capitalización por facturas** | Constancia y liquidación | Comprobante canónico, mora y capital. |
+| **Capitalización por posiciones** | Constancia y liquidación | Posición y base capitalizada. |
+| **Deuda única / cálculo combinado** | Constancia y liquidación | Capital, fechas y tramos resarcitorio-punitorio. |
 
-Los identificadores de facturas conservan su valor original para exhibición, pero se comparan mediante una clave canónica. Por ejemplo, `FACB2 0002 - 00000424` y `FACASIB-424` se confrontan como `FAC-424`.
+Los identificadores originales se conservan para exhibición, pero se normalizan para el confronte. Por ejemplo, distintas formas gráficas de una misma factura pueden reducirse a una clave canónica común.
 
-## Privacidad y evidencia
+## Lectura y revisión
 
-- Los PDFs permanecen en memoria local y nunca forman parte de una petición de red.
-- No hay base de datos, cuentas de usuario ni almacenamiento remoto de casos.
-- La sesión JSON no incluye el archivo PDF, pero sí puede incluir datos extraídos; debe tratarse como información sensible.
-- Los PDFs reales usados para aceptación no se incluyen en el repositorio.
-- Las pruebas versionadas utilizan solamente datos sintéticos.
+La extracción documental combina:
+
+- `pdf.js` para texto y coordenadas;
+- reconstrucción de renglones por posición visual;
+- detección de documentos escaneados;
+- OCR en español ejecutado localmente;
+- parsers específicos por perfil;
+- niveles de confianza y bloqueos explícitos;
+- edición humana antes de aceptar la lectura.
+
+Las correcciones realizadas en la interfaz forman parte de la sesión de trabajo, pero no alteran los PDFs originales.
 
 ## Cálculo de intereses
 
-La fórmula implementada para cada tramo es:
+La fórmula base por tramo es:
 
-`interés = capital × tasa mensual × días / 30`
+```text
+interés = capital × tasa mensual × días / 30
+```
 
-El resultado muestra fechas, días, tasa mensual e importe de cada tramo. La cobertura vigente del motor termina el **31/12/2026**; la aplicación no extrapola tasas futuras.
+Cada desarrollo expone:
 
-En las ejecuciones especiales con capitalización, el desarrollo conserva las cuatro etapas del cálculo:
+- fecha inicial y final;
+- cantidad de días;
+- tasa mensual aplicada;
+- capital utilizado;
+- interés del tramo;
+- total acumulado;
+- diferencia respecto del importe informado.
 
-1. resarcitorio sobre el capital original, desde el día posterior a la mora hasta el inicio del juicio inclusive;
-2. punitorio previo sobre el capital original, desde el día posterior al inicio del juicio hasta la notificación de demanda inclusive;
+La cobertura vigente del motor termina el **31/12/2026**. La aplicación bloquea el cálculo cuando las tasas no cubren íntegramente el período y no extrapola valores futuros.
+
+### Ejecuciones especiales con capitalización
+
+El desarrollo conserva cuatro etapas:
+
+1. resarcitorio sobre capital original hasta el inicio del juicio;
+2. punitorio previo hasta la notificación de demanda;
 3. capitalización de capital, resarcitorio y punitorio previo;
-4. punitorio posterior sobre el total capitalizado, desde el día posterior a la notificación hasta la fecha de liquidación inclusive.
+4. punitorio posterior sobre el total capitalizado.
 
-El resumen general compara cada componente calculado con el informado. El detalle por posición expone, además, todos los tramos, días, tasas e importes utilizados.
+## Resultado y exportación
 
-La regla general desde 2023 surge de la [Resolución 4323/MHFGC/2022](https://www.agip.gob.ar/normativa/resoluciones/2022/mhfgc/resolucion-n-4323-mhfgc--2022) y de la [Resolución 360/AGIP/2022](https://boletinoficial.buenosaires.gob.ar/normativaba/norma/615104). Las tasas están aisladas en `lib/confronte/rates.ts` para facilitar su revisión y actualización.
+La aplicación ofrece:
+
+- resumen general del confronte;
+- detalle desplegable por posición;
+- auditoría de cada tramo;
+- formato monetario argentino con centavos;
+- tolerancia operativa visible del 5%;
+- sesión JSON;
+- exportación CSV;
+- informe imprimible;
+- instalación como PWA;
+- funcionamiento sin conexión después de la primera carga.
+
+## Identidad visual
+
+Confronte EJF forma parte de **Herramientas SEC29**. La marca combina:
+
+- dos documentos que deben corresponderse;
+- una lupa de control;
+- una marca de validación;
+- una grilla de cálculo trazable.
+
+La paleta bordó, grafito, marfil, azul técnico y dorado apagado comparte el lenguaje visual de Cédulas EJE, Diplomaker y la suite principal.
+
+## Privacidad y alcance
+
+- los PDFs se procesan en memoria local;
+- no se envían documentos a un servidor;
+- no existe base de datos de expedientes;
+- la sesión JSON puede contener datos extraídos y debe tratarse como información sensible;
+- los PDFs reales de aceptación no forman parte del repositorio;
+- las pruebas versionadas utilizan datos sintéticos;
+- la herramienta no reemplaza la revisión profesional;
+- no constituye un sistema oficial del Consejo de la Magistratura de la CABA.
 
 ## Arquitectura
 
 ```text
 app/
-  components/       interfaz, carga, revisión y resultados
+  components/       interfaz, revisión y resultados
 lib/
   pdf/              extracción por coordenadas y OCR local
-  parsers/          clasificación y parsers documentales
+  parsers/          clasificación y perfiles documentales
   domain/           tipos, fechas, importes y normalización
   confronte/        emparejamiento, tasas y cálculo
 public/
-  ocr/              worker, núcleo WASM y modelo español
-tests/              regresiones con fixtures sintéticos
-scripts/            auditoría opcional de corpus local
+  ocr/              worker, WASM y modelo español
+tests/              regresiones con datos sintéticos
 ```
 
 ## Desarrollo
 
-Requisitos: Node.js 22.13 o posterior.
+Requiere Node.js 22.13 o posterior.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Comandos de control:
+Controles previos a publicación:
 
 ```bash
 npm run lint
 npm test
-npm run audit:pdf -- /ruta/local/a/pdfs
+npm run build
 ```
 
-`audit:pdf` imprime únicamente perfil, cantidad de filas, confianza y bloqueos. No modifica los PDFs ni genera fixtures con datos reales.
+La rama `main` compila y publica automáticamente la edición estática de GitHub Pages. Los recursos OCR se reconstruyen desde las dependencias fijadas; no se versionan documentos reales.
 
-## Publicación en GitHub Pages
+## Referencias normativas del motor
 
-Cada actualización de la rama `main` ejecuta pruebas y genera automáticamente la edición estática de GitHub Pages. Los recursos de OCR se reconstruyen desde las dependencias fijadas en `package-lock.json`; no se versionan binarios generados ni documentos judiciales.
+La regla general de tasas desde 2023 se mantiene aislada en `lib/confronte/rates.ts` para facilitar su revisión y actualización. Entre las referencias documentadas se encuentran:
 
-## Criterio de aceptación
+- [Resolución 4323/MHFGC/2022](https://www.agip.gob.ar/normativa/resoluciones/2022/mhfgc/resolucion-n-4323-mhfgc--2022)
+- [Resolución 360/AGIP/2022](https://boletinoficial.buenosaires.gob.ar/normativaba/norma/615104)
 
-Antes de publicar se exige:
+## Repositorios relacionados
 
-- TypeScript sin errores;
-- lint sin observaciones;
-- pruebas de normalización, perfiles, identidad, tasas y cobertura;
-- build de producción;
-- auditoría local contra el corpus de referencia, sin incorporarlo al repositorio.
+- [Herramientas SEC29](https://github.com/sinergiaestudio/herramientas-j15sec29)
+- [Cédulas EJE](https://github.com/sinergiaestudio/Cedulas-EJE-v1.0)
+- [Diplomaker](https://github.com/sinergiaestudio/diplomaker)
+- [Perfil de Marcelo Gómez](https://github.com/sinergiaestudio/marcelo-gomez)
 
 ## Autoría
 
-Diseño y desarrollo: **Marcelo Gómez** · innovación aplicada a la gestión judicial.
+Diseño y desarrollo: **[Marcelo Gómez](https://github.com/sinergiaestudio)**  
+Innovación aplicada a la gestión judicial.
