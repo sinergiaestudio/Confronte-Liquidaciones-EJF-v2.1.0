@@ -1,5 +1,23 @@
 # Historial de cambios
 
+## 2.2.0 — 2026-08-27
+
+### Constancias históricas y OCR
+
+- OCR local elevado a una resolución cercana a 300 ppp para constancias escaneadas con tipografía matricial.
+- Reconstrucción tolerante a prefijos, cuotas, años y separadores monetarios alterados por OCR.
+- Conciliación trazable de totales OCR con el saldo certificado global cuando existe una única reparación inequívoca.
+- Reconocimiento de liquidaciones por la estructura de su tabla aunque el OCR omita el título superior.
+- Reparación de totales OCR mediante la identidad capital + resarcitorio + punitorio, siempre marcada como inferencia.
+
+### Cálculo explicable
+
+- Las constancias AGIP históricas distinguen el interés ya certificado de su continuación posterior a la fecha de corte.
+- Cada posición muestra los importes calculados e informados de capital, resarcitorio, punitorio y total.
+- Cada tramo expone la ecuación numérica completa con base, tasa, días, divisor e importe resultante.
+- Se agregó la ecuación de cierre calculada e informada para cada posición.
+- Tasas del segundo semestre de 2026 contrastadas con el calculador oficial del Consejo de la Magistratura.
+
 ## 2.1.0 — 2026-08-21
 
 ### Ejecuciones especiales

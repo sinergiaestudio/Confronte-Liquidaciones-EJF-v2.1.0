@@ -57,7 +57,8 @@ export function Sec29SuiteShell() {
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    setTheme(preferredTheme());
+    const frame = window.requestAnimationFrame(() => setTheme(preferredTheme()));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {

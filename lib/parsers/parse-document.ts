@@ -35,10 +35,15 @@ function firstMatch(text: string, patterns: RegExp[]): string | undefined {
 
 function classify(text: string): { kind: DocumentKind; profile: DocumentProfile } {
   const normalized = normalizeText(text);
+  const hasLiquidationTable =
+    /DETALLE DE LIQUIDACION/.test(normalized) &&
+    /IMP NOMINAL/.test(normalized) &&
+    /INTERES RESA[A-Z]* INTERES PUNITORIOS?/.test(normalized);
   const isLiquidation =
     /LIQUIDACION MANDATARIO/.test(normalized) ||
     /LIQUIDACION MANDATARIOS/.test(normalized) ||
-    /TIPO CALCULO RESARCITORIO/.test(normalized);
+    /TIPO CALCULO RESARCITORIO/.test(normalized) ||
+    hasLiquidationTable;
   const kind: DocumentKind = isLiquidation
     ? "liquidacion"
     : /CONSTANCIA DE DEUDA|CERTIFICADO DE DEUDA/.test(normalized)
@@ -109,6 +114,9 @@ function parseMetadata(text: string, kind: DocumentKind, profile: DocumentProfil
     /Buenos Aires,\s*(?:\w+\s+)?(\d{1,2}\s+de\s+[A-Za-záéíóúñ]+\s+de\s+\d{4})/i,
     /se expide[^\n]{0,100}?(\d{1,2}\s+d[ií]as?\s+del?\s+mes\s+de\s+[A-Za-záéíóúñ]+\s+de\s+\d{4})/i,
   ]));
+  const interestCutoffDate = parseDate(firstMatch(text, [
+    /SALDO\s+IMPAGO\s+AL\s*[:=\-]?\s*((?:19|20)\d{2}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-](?:19|20)\d{2})/i,
+  ]));
 
   let declaredTotal: number | undefined;
   const totalPatterns = profile === "deuda_unica"
@@ -136,6 +144,15 @@ function parseMetadata(text: string, kind: DocumentKind, profile: DocumentProfil
     if (debtTotalValues.length) declaredTotal = debtTotalValues.at(-1);
   }
 
+  if (profile === "agip_historica") {
+    const balanceLine = text.match(/SALDO\s+IMPAGO\s+AL[^\n\r]+/i)?.[0];
+    if (balanceLine) {
+      const afterDate = balanceLine.replace(/^.*?(?:19|20)\d{2}-\d{1,2}-\d{1,2}/, "");
+      const balanceValues = historicalMoneyValues(afterDate);
+      if (balanceValues.length) declaredTotal = balanceValues.at(-1);
+    }
+  }
+
   if (kind === "constancia" && profile === "estandar" && declaredTotal === undefined) {
     declaredTotal = parseMoney(firstMatch(text, [/Suma adeudada:\s*([\d.,]+)/i]));
   }
@@ -151,12 +168,23 @@ function parseMetadata(text: string, kind: DocumentKind, profile: DocumentProfil
     suitStartDate,
     notificationDate,
     liquidationDate,
+    interestCutoffDate,
     declaredTotal,
   };
 }
 
 function moneyValues(value: string): number[] {
   return [...value.matchAll(/(?:\$\s*)?([\d][\d.,]*)/g)]
+    .map((match) => parseMoney(match[1]))
+    .filter((item): item is number => item !== undefined);
+}
+
+function historicalMoneyValues(value: string): number[] {
+  const compact = value
+    .replace(/([.,])\s+(?=\d{2}(?:\D|$))/g, "$1")
+    .replace(/(\d)\/(?=\d{2}(?:\D|$))/g, "$1,")
+    .replace(/\b(\d{1,3})\.(\d{3})(\d{2})\b/g, "$1.$2,$3");
+  return [...compact.matchAll(/(?:\$\s*)?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2}|\d+[.,]\d{2})(?!\d)/g)]
     .map((match) => parseMoney(match[1]))
     .filter((item): item is number => item !== undefined);
 }
@@ -233,6 +261,25 @@ function parseStandardRows(extraction: ExtractionResult, kind: DocumentKind): De
       const capital = values[0];
       const key = position;
       const isLiquidationRow = kind === "liquidacion" && values.length >= 4;
+      const resarcitorio = isLiquidationRow ? values[1] : undefined;
+      const punitorio = isLiquidationRow ? values[2] : undefined;
+      let total = isLiquidationRow ? values[3] : values.length >= 3 ? values[2] : undefined;
+      const inferredFields: string[] = [];
+      const notes: string[] = [];
+      if (
+        extraction.mode !== "texto" &&
+        isLiquidationRow &&
+        resarcitorio !== undefined &&
+        punitorio !== undefined &&
+        total !== undefined
+      ) {
+        const componentTotal = Math.round((capital + resarcitorio + punitorio + Number.EPSILON) * 100) / 100;
+        if (Math.abs(componentTotal - total) >= 0.01) {
+          notes.push(`Total OCR '${total}' reconstruido por la identidad capital + resarcitorio + punitorio.`);
+          inferredFields.push("total");
+          total = componentTotal;
+        }
+      }
       rows.push({
         id: stableId(page.pageNumber, key, capital, rows.length),
         key,
@@ -240,26 +287,30 @@ function parseStandardRows(extraction: ExtractionResult, kind: DocumentKind): De
         concept: match[2].trim(),
         dueDate,
         capital,
-        resarcitorio: isLiquidationRow ? values[1] : undefined,
-        punitorio: isLiquidationRow ? values[2] : undefined,
-        total: isLiquidationRow ? values[3] : values.length >= 3 ? values[2] : undefined,
+        resarcitorio,
+        punitorio,
+        total,
         sourcePage: page.pageNumber,
-        confidence: isLiquidationRow || values.length <= 3 ? 0.97 : 0.82,
+        confidence: inferredFields.length ? 0.78 : isLiquidationRow || values.length <= 3 ? 0.97 : 0.82,
+        inferredFields,
+        notes,
       });
     }
   }
   return deduplicateRows(rows);
 }
 
-function parseHistoricalRows(extraction: ExtractionResult): DebtRow[] {
+function parseHistoricalRows(extraction: ExtractionResult, declaredTotal?: number): DebtRow[] {
   const rows: DebtRow[] = [];
   for (const page of extraction.pages) {
     const blocks: string[] = [];
     let current = "";
     for (const rawLine of page.text.split(/\r?\n/)) {
-      const line = rawLine.replace(/\s+/g, " ").trim();
+      let line = rawLine.replace(/\s+/g, " ").trim();
+      const yearOffset = line.search(/(?:19|20)\d{2}/);
+      if (yearOffset > 0 && yearOffset <= 12) line = line.slice(yearOffset);
       if (!line || /^(?:19|20)\d{2}$/.test(line)) continue;
-      const beginsRow = /^(?:19|20)\d{2}\s+(?:(?:19|20)\d{2}\s+)?(?:\d{1,3}(?:\s|$)|\d{1,2}\/\d{1,2}\/)/.test(line);
+      const beginsRow = /^(?:19|20)\d{2}\s+(?:(?:19|20)\d{2}\s+)?(?:[A-Za-z\[\]Il|]*\d{1,3}[A-Za-z\[\]Il|]*(?:\s|$)|[A-Za-z\[\]Il|]{1,4}\s+(?=\d{1,2}\/)|\d{1,2}\/\d{1,2}\/)/.test(line);
       if (beginsRow) {
         if (current) blocks.push(current);
         current = line;
@@ -277,13 +328,18 @@ function parseHistoricalRows(extraction: ExtractionResult): DebtRow[] {
       const dateMatch = block.match(/\b\d{1,2}\/\d{1,2}\/(?:19|20)\d{2}\b/);
       if (!yearMatch || !dateMatch || dateMatch.index === undefined) continue;
       const prefix = block.slice(yearMatch[0].length, dateMatch.index).replace(new RegExp(`^${yearMatch[1]}\\s+`), "");
-      const installmentMatch = prefix.match(/\b(\d{1,3})\b/);
-      const dueDate = parseDate(dateMatch[0]);
-      const values = moneyValues(block.slice(dateMatch.index + dateMatch[0].length));
+      const installmentMatch = prefix.match(/(\d{1,3})/);
+      let dueDate = parseDate(dateMatch[0]);
+      const values = historicalMoneyValues(block.slice(dateMatch.index + dateMatch[0].length));
       if (!dueDate || !values.length) continue;
       let installment = installmentMatch ? Number(installmentMatch[1]) : 0;
       const inferredFields: string[] = [];
       const notes: string[] = [];
+      if (extraction.mode !== "texto" && !dueDate.startsWith(yearMatch[1])) {
+        dueDate = `${yearMatch[1]}${dueDate.slice(4)}`;
+        inferredFields.push("dueDate");
+        notes.push(`Año de vencimiento reparado desde '${dateMatch[0]}' por coincidencia con la posición.`);
+      }
       if (!installment || installment > 12) {
         const previous = rows.at(-1);
         const previousInstallment = previous?.position ? Number(previous.position.split("-")[1]) : 0;
@@ -318,7 +374,69 @@ function parseHistoricalRows(extraction: ExtractionResult): DebtRow[] {
       });
     }
   }
-  return deduplicateRows(rows);
+  const uniqueRows = deduplicateRows(rows);
+  if (extraction.mode === "texto") return uniqueRows;
+
+  const modalCapitalByYear = new Map<string, number>();
+  const years = uniqueRows
+    .map((row) => row.position?.slice(0, 4))
+    .filter((year): year is string => Boolean(year));
+  for (const year of new Set(years)) {
+    const yearRows = uniqueRows.filter((row) => row.position?.startsWith(`${year}-`));
+    const counts = new Map<string, number>();
+    for (const row of yearRows) {
+      const key = row.capital.toFixed(2);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const mode = [...counts.entries()].sort((left, right) => right[1] - left[1])[0];
+    if (mode && mode[1] >= 2 && mode[1] >= Math.ceil(yearRows.length / 2)) {
+      modalCapitalByYear.set(year, Number(mode[0]));
+    }
+  }
+
+  let repairedRows = uniqueRows.map((row) => {
+    const year = row.position?.slice(0, 4);
+    const modal = year ? modalCapitalByYear.get(year) : undefined;
+    if (modal === undefined || modal === row.capital) return row;
+    if (row.total === undefined && row.capital > modal && row.capital < modal * 3) {
+      return {
+        ...row,
+        capital: modal,
+        total: row.capital,
+        confidence: Math.min(row.confidence, 0.62),
+        inferredFields: [...new Set([...(row.inferredFields ?? []), "capital", "total"])],
+        notes: [...(row.notes ?? []), `Separadores OCR ausentes: se recuperó el capital repetido de ${year} y se conservó '${row.capital.toFixed(2)}' como total certificado.`],
+      };
+    }
+    const original = row.capital.toFixed(2);
+    const expected = modal.toFixed(2);
+    const differentDigits = [...original].filter((character, index) => character !== expected[index]).length;
+    if (original.length !== expected.length || differentDigits !== 1) return row;
+    return {
+      ...row,
+      capital: modal,
+      confidence: Math.min(row.confidence, 0.68),
+      inferredFields: [...new Set([...(row.inferredFields ?? []), "capital"])],
+      notes: [...(row.notes ?? []), `Capital OCR '${original}' reparado por repetición consistente dentro de ${year}.`],
+    };
+  });
+
+  if (declaredTotal !== undefined && repairedRows.every((row) => row.total !== undefined)) {
+    const rowsTotal = Math.round((repairedRows.reduce((sum, row) => sum + (row.total ?? 0), 0) + Number.EPSILON) * 100) / 100;
+    const discrepancy = Math.round((declaredTotal - rowsTotal + Number.EPSILON) * 100) / 100;
+    const candidates = repairedRows.filter((row) => row.inferredFields?.includes("total"));
+    if (Math.abs(discrepancy) >= 0.01 && Math.abs(discrepancy) <= 100 && candidates.length === 1) {
+      const candidateId = candidates[0].id;
+      repairedRows = repairedRows.map((row) => row.id !== candidateId ? row : ({
+        ...row,
+        total: Math.round(((row.total ?? 0) + discrepancy + Number.EPSILON) * 100) / 100,
+        confidence: Math.min(row.confidence, 0.58),
+        inferredFields: [...new Set([...(row.inferredFields ?? []), "total"])],
+        notes: [...(row.notes ?? []), `Total OCR conciliado con el saldo certificado global ${declaredTotal.toFixed(2)}.`],
+      }));
+    }
+  }
+  return repairedRows;
 }
 
 function parseInvoiceRows(extraction: ExtractionResult, kind: DocumentKind): DebtRow[] {
@@ -438,6 +556,23 @@ function buildIssues(
   if (kind === "liquidacion" && profile === "estandar" && (!metadata.suitStartDate || !metadata.liquidationDate)) {
     issues.push({ id: "dates", severity: "critical", title: "Fechas judiciales incompletas", detail: "La fecha de inicio o de liquidación falta y el recálculo no puede cerrarse." });
   }
+  if (kind === "constancia" && profile === "agip_historica" && !metadata.interestCutoffDate) {
+    issues.push({
+      id: "historical-cutoff",
+      severity: "warning",
+      title: "Fecha de corte histórica no leída",
+      detail: "Revise el campo 'Intereses certificados al'. Sin esa fecha, la aplicación no puede separar el interés certificado de su continuación.",
+      field: "interestCutoffDate",
+    });
+  }
+  if (kind === "constancia" && profile === "agip_historica" && rows.some((row) => row.total === undefined)) {
+    issues.push({
+      id: "historical-row-totals",
+      severity: "warning",
+      title: "Intereses certificados incompletos",
+      detail: "Uno o más renglones no conservan la columna 'deuda más intereses'; revise la grilla antes de aceptar el confronte.",
+    });
+  }
   if (
     kind === "liquidacion" &&
     (profile === "capitalizacion_facturas" || profile === "capitalizacion_posiciones") &&
@@ -484,7 +619,7 @@ export function parseDocument(input: ParseInput): ParsedDocument {
   } else if (profile === "deuda_unica") {
     rows = parseUniqueDebtRows(input.extraction, kind);
   } else if (profile === "agip_historica" && kind === "constancia") {
-    rows = parseHistoricalRows(input.extraction);
+    rows = parseHistoricalRows(input.extraction, metadata.declaredTotal);
   } else {
     rows = parseStandardRows(input.extraction, kind);
   }

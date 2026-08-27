@@ -106,7 +106,10 @@ export async function extractPdfWithOcr(file: File, onProgress?: ExtractionProgr
   try {
     for (currentPage = 0; currentPage < pdf.numPages; currentPage += 1) {
       const page = await pdf.getPage(currentPage + 1);
-      const viewport = page.getViewport({ scale: 3 });
+      // Las constancias AGIP históricas suelen ser escaneos claros pero con
+      // tipografía matricial pequeña. Cerca de 300 ppp mejora de forma decisiva
+      // la lectura de cuotas, centavos y la fecha "SALDO IMPAGO AL".
+      const viewport = page.getViewport({ scale: 4.1 });
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width);
       canvas.height = Math.ceil(viewport.height);

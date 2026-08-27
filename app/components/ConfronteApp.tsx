@@ -186,7 +186,9 @@ function MetadataEditor({ document, onChange }: { document: ParsedDocument; onCh
         ...(isCapitalization ? [{ key: "notificationDate" as const, label: "Notificación de demanda", value: document.metadata.notificationDate }] : []),
         { key: "liquidationDate" as const, label: "Liquidación", value: document.metadata.liquidationDate },
       ]
-    : [{ key: "documentDate" as const, label: "Fecha del documento", value: document.metadata.documentDate }];
+    : document.profile === "agip_historica"
+      ? [{ key: "interestCutoffDate" as const, label: "Intereses certificados al", value: document.metadata.interestCutoffDate }]
+      : [{ key: "documentDate" as const, label: "Fecha del documento", value: document.metadata.documentDate }];
 
   return (
     <div className="metadata-grid">
@@ -206,6 +208,7 @@ function MetadataEditor({ document, onChange }: { document: ParsedDocument; onCh
 
 function ReviewTable({ document, onChange }: { document: ParsedDocument; onChange: (document: ParsedDocument) => void }) {
   const invoiceProfile = document.profile === "capitalizacion_facturas";
+  const historicalCertificate = document.kind === "constancia" && document.profile === "agip_historica";
   const updateRow = (rowId: string, field: keyof DebtRow, value: string | number | undefined) => {
     const rows = document.rows.map((row) => {
       if (row.id !== rowId) return row;
@@ -230,12 +233,13 @@ function ReviewTable({ document, onChange }: { document: ParsedDocument; onChang
   return (
     <div className="table-shell">
       <table className="review-table">
-        <thead><tr><th>{invoiceProfile ? "Comprobante" : "Posición"}</th><th>Vencimiento / mora</th><th className="number-cell">Capital</th>{document.kind === "liquidacion" && <th className="number-cell">Resarcitorio</th>}{document.kind === "liquidacion" && <th className="number-cell">Punitorio</th>}{document.kind === "liquidacion" && <th className="number-cell">Total</th>}<th>Lectura</th><th aria-label="Acciones" /></tr></thead>
+        <thead><tr><th>{invoiceProfile ? "Comprobante" : "Posición"}</th><th>Vencimiento / mora</th><th className="number-cell">Capital</th>{historicalCertificate && <th className="number-cell">Total certificado</th>}{document.kind === "liquidacion" && <th className="number-cell">Resarcitorio</th>}{document.kind === "liquidacion" && <th className="number-cell">Punitorio</th>}{document.kind === "liquidacion" && <th className="number-cell">Total</th>}<th>Lectura</th><th aria-label="Acciones" /></tr></thead>
         <tbody>{document.rows.map((row) => (
           <tr key={row.id} className={row.inferredFields?.length ? "row--review" : ""}>
             <td><input value={(invoiceProfile ? row.originalDocumentId : row.position) ?? ""} onChange={(event) => updateRow(row.id, invoiceProfile ? "originalDocumentId" : "position", event.target.value)} /></td>
             <td><input type="date" value={row.dueDate ?? ""} onChange={(event) => updateRow(row.id, "dueDate", event.target.value)} /></td>
             <td className="number-cell"><MoneyInput label={`Capital ${row.key}`} value={row.capital} onCommit={(value) => updateRow(row.id, "capital", value)} /></td>
+            {historicalCertificate && <td className="number-cell"><MoneyInput label={`Total certificado ${row.key}`} value={row.total} onCommit={(value) => updateRow(row.id, "total", value)} /></td>}
             {document.kind === "liquidacion" && <td className="number-cell"><MoneyInput label={`Resarcitorio ${row.key}`} value={row.resarcitorio} onCommit={(value) => updateRow(row.id, "resarcitorio", value)} /></td>}
             {document.kind === "liquidacion" && <td className="number-cell"><MoneyInput label={`Punitorio ${row.key}`} value={row.punitorio} onCommit={(value) => updateRow(row.id, "punitorio", value)} /></td>}
             {document.kind === "liquidacion" && <td className="number-cell"><MoneyInput label={`Total ${row.key}`} value={row.total} onCommit={(value) => updateRow(row.id, "total", value)} /></td>}
@@ -292,14 +296,35 @@ function DocumentReview({ title, document, counterpart, onChange }: {
   );
 }
 
-function TrancheTable({ title, capital, tranches }: { title: string; capital: number; tranches: InterestTranche[] }) {
-  const total = roundMoney(tranches.reduce((sum, tranche) => sum + tranche.interest, 0));
+function TrancheTable({ title, capital, tranches, reported, certified }: {
+  title: string;
+  capital: number;
+  tranches: InterestTranche[];
+  reported?: number;
+  certified?: number;
+}) {
+  const continuation = roundMoney(tranches.reduce((sum, tranche) => sum + tranche.interest, 0));
+  const total = roundMoney((certified ?? 0) + continuation);
   return (
     <section className="tranche-block">
       <div className="tranche-block__heading"><div><strong>{title}</strong><span>Base {formatMoney(capital)}</span></div><b>{formatMoney(total)}</b></div>
-      {tranches.length ? <div className="table-shell"><table className="tranche-table"><thead><tr><th>Desde</th><th>Hasta</th><th>Días</th><th>Tasa mensual</th><th>Interés</th></tr></thead><tbody>{tranches.map((tranche) => <tr key={`${title}-${tranche.from}-${tranche.to}`}><td>{formatDate(tranche.from)}</td><td>{formatDate(tranche.to)}</td><td>{tranche.days}</td><td>{formatRate(tranche.monthlyRate)}</td><td>{formatMoney(tranche.interest)}</td></tr>)}</tbody></table></div> : <p className="empty-tranches">No hay tramos calculables.</p>}
-      <p className="formula-line">Base × tasa mensual × días / 30. Cada tramo conserva sus centavos.</p>
+      {certified !== undefined && <div className="certified-interest"><span>Interés ya certificado</span><code>{formatMoney(certified)}</code></div>}
+      {tranches.length ? <div className="table-shell"><table className="tranche-table"><thead><tr><th>Desde</th><th>Hasta</th><th>Días</th><th>Tasa mensual</th><th>Ecuación e interés</th></tr></thead><tbody>{tranches.map((tranche) => <tr key={`${title}-${tranche.from}-${tranche.to}`}><td>{formatDate(tranche.from)}</td><td>{formatDate(tranche.to)}</td><td>{tranche.days}</td><td>{formatRate(tranche.monthlyRate)}</td><td className="equation-cell"><code>{formatMoney(capital)} × {formatRate(tranche.monthlyRate).replace(" mensual", "")} × {tranche.days} / 30</code><strong>= {formatMoney(tranche.interest)}</strong></td></tr>)}</tbody></table></div> : <p className="empty-tranches">No hay tramos adicionales calculables.</p>}
+      <div className="formula-line"><span>{certified !== undefined ? `${formatMoney(certified)} certificado + ${formatMoney(continuation)} de continuación = ${formatMoney(total)}` : `Suma de tramos calculados = ${formatMoney(total)}`}</span><span>Informado en la liquidación: <strong>{formatMoney(reported)}</strong></span></div>
     </section>
+  );
+}
+
+function PositionEquation({ row }: { row: RecalculatedRow }) {
+  const actualComplete = row.actualCapital !== undefined && row.actualResarcitorio !== undefined && row.actualPunitorio !== undefined;
+  const informedTotal = row.actualTotal ?? (actualComplete
+    ? roundMoney(row.actualCapital! + row.actualResarcitorio! + row.actualPunitorio!)
+    : undefined);
+  return (
+    <div className="position-equation">
+      <div><span>Ecuación calculada</span><code>{formatMoney(row.capital)} + {formatMoney(row.expectedResarcitorio)} + {formatMoney(row.expectedPunitorio)} = <strong>{formatMoney(row.expectedTotal)}</strong></code></div>
+      <div><span>Ecuación informada</span>{actualComplete ? <code>{formatMoney(row.actualCapital)} + {formatMoney(row.actualResarcitorio)} + {formatMoney(row.actualPunitorio)} = <strong>{formatMoney(informedTotal)}</strong></code> : <code>Faltan componentes informados en la liquidación.</code>}</div>
+    </div>
   );
 }
 
@@ -344,7 +369,7 @@ function GeneralReport({ calculation, constancia, liquidacion }: {
         <div className="report-facts"><div><span>Modo aplicado</span><strong>{SCENARIO_LABELS[calculation.scenario]}</strong></div><div><span>Identificador</span><strong>{identifier ?? "No informado"}</strong></div><div><span>Inicio de juicio</span><strong>{formatDate(liquidacion.metadata.suitStartDate)}</strong></div><div><span>Notificación</span><strong>{formatDate(liquidacion.metadata.notificationDate)}</strong></div><div><span>Fecha de liquidación</span><strong>{formatDate(liquidacion.metadata.liquidationDate ?? liquidacion.special?.punitorioTo)}</strong></div><div><span>Renglones calculados</span><strong>{calculation.rows.length}</strong></div></div>
         {calculation.messages.map((message) => <div className="coverage-alert" key={message}><Icon name="warning" /><span><strong>Dato necesario</strong>{message}</span></div>)}
         <ComparisonGrid rows={comparisons} />
-        {calculation.postCapitalizationTranches.length > 0 && <TrancheTable title="Punitorio posterior sobre el capital capitalizado" capital={calculation.expectedCapitalized ?? 0} tranches={calculation.postCapitalizationTranches} />}
+        {calculation.postCapitalizationTranches.length > 0 && <TrancheTable title="Punitorio posterior sobre el capital capitalizado" capital={calculation.expectedCapitalized ?? 0} tranches={calculation.postCapitalizationTranches} reported={calculation.actualPostCapitalizationPunitorio} />}
       </div>
     </details>
   );
@@ -376,8 +401,9 @@ function PositionDetails({ rows }: { rows: RecalculatedRow[] }) {
                 { label: "Punitorio", expected: row.expectedPunitorio, actual: row.actualPunitorio },
                 { label: "Subtotal / total", expected: row.expectedTotal, actual: row.actualTotal },
               ]} />
+              <PositionEquation row={row} />
               {row.notes.length > 0 && <div className="position-notes">{row.notes.map((note) => <p key={note}><Icon name="info" />{note}</p>)}</div>}
-              <div className="tranche-grid"><TrancheTable title="Intereses resarcitorios" capital={row.capital} tranches={row.resarcitorioTranches} /><TrancheTable title="Intereses punitorios" capital={row.capital} tranches={row.punitorioTranches} /></div>
+              <div className="tranche-grid"><TrancheTable title="Intereses resarcitorios" capital={row.capital} tranches={row.resarcitorioTranches} reported={row.actualResarcitorio} certified={row.certifiedResarcitorio} /><TrancheTable title="Intereses punitorios" capital={row.capital} tranches={row.punitorioTranches} reported={row.actualPunitorio} /></div>
             </div>
           </details>
         );
@@ -400,6 +426,7 @@ function sanitizeImportedDocument(raw: ParsedDocument): ParsedDocument {
     suitStartDate: raw.metadata?.suitStartDate ?? reparsed.metadata.suitStartDate,
     notificationDate: raw.metadata?.notificationDate ?? reparsed.metadata.notificationDate,
     liquidationDate: raw.metadata?.liquidationDate ?? reparsed.metadata.liquidationDate,
+    interestCutoffDate: raw.metadata?.interestCutoffDate ?? reparsed.metadata.interestCutoffDate,
     declaredTotal: raw.metadata?.declaredTotal ?? reparsed.metadata.declaredTotal,
   };
   return { ...reparsed, rows: raw.rows ?? reparsed.rows, metadata, special: raw.special ?? reparsed.special, reviewed: Boolean(raw.reviewed) };
@@ -497,7 +524,7 @@ export function ConfronteApp() {
 
   return (
     <>
-      <header className="topbar"><div className="shell topbar__inner"><a className="brand" href="#inicio" aria-label="Ir al inicio"><span className="brand__mark">J15</span><span><strong>Juzgado N.º 15 · Secretaría N.º 29</strong><small>Herramientas internas · EJF</small></span></a><div className="topbar__actions"><span className="version-badge">v2.1</span><button className="header-button" type="button" onClick={() => sessionInput.current?.click()}><Icon name="archive" /> Abrir sesión</button><button className="header-button" type="button" onClick={exportSession} disabled={!left && !right}><Icon name="download" /> Guardar</button></div></div></header>
+      <header className="topbar"><div className="shell topbar__inner"><a className="brand" href="#inicio" aria-label="Ir al inicio"><span className="brand__mark">J15</span><span><strong>Juzgado N.º 15 · Secretaría N.º 29</strong><small>Herramientas internas · EJF</small></span></a><div className="topbar__actions"><span className="version-badge">v2.2</span><button className="header-button" type="button" onClick={() => sessionInput.current?.click()}><Icon name="archive" /> Abrir sesión</button><button className="header-button" type="button" onClick={exportSession} disabled={!left && !right}><Icon name="download" /> Guardar</button></div></div></header>
       <main id="inicio">
         <section className="hero"><div className="shell hero__grid"><div className="hero__copy"><p className="eyebrow eyebrow--gold">Control documental y cálculo trazable</p><h1>Confronte de<br /><em>liquidaciones EJF</em></h1><p className="hero__lead">Compare constancias de deuda y liquidaciones mandatarias con lectura de PDF, OCR local, revisión asistida y detalle de cada tramo de interés.</p><div className="privacy-chip"><Icon name="shield" /><span><strong>Procesamiento local</strong>Sus PDFs no se suben ni se almacenan.</span></div></div><aside className="hero__audit" aria-label="Criterios de control"><p className="eyebrow">Qué controla</p><ol><li><span>01</span><div><strong>Identidad documental</strong><small>Adjudicación o certificado.</small></div></li><li><span>02</span><div><strong>Integridad de la deuda</strong><small>Posiciones, vencimientos y capital con centavos.</small></div></li><li><span>03</span><div><strong>Intereses explicables</strong><small>Estándar, capitalización y deuda única.</small></div></li></ol></aside></div></section>
         <section className="workspace shell" aria-labelledby="workflow-title"><div className="section-heading"><div><p className="eyebrow">Flujo de trabajo</p><h2 id="workflow-title">Un confronte en tres etapas</h2></div><div className="stepper" aria-label="Progreso"><span className="is-active"><b>1</b>Cargar</span><i /><span className={left || right ? "is-active" : ""}><b>2</b>Revisar</span><i /><span className={bothReady ? "is-active" : ""}><b>3</b>Confrontar</span></div></div><div className="upload-grid"><UploadCard side="constancia" state={slots.constancia} onFile={(file) => processFile("constancia", file)} onRemove={() => setSlot("constancia", EMPTY_SLOT)} onOcr={() => rerunOcr("constancia")} /><div className="upload-connector"><Icon name="arrow" /></div><UploadCard side="liquidacion" state={slots.liquidacion} onFile={(file) => processFile("liquidacion", file)} onRemove={() => setSlot("liquidacion", EMPTY_SLOT)} onOcr={() => rerunOcr("liquidacion")} /></div>{!left && !right && <div className="empty-guidance"><Icon name="spark" /><div><strong>Perfiles documentales contemplados</strong><span>AGIP actual e histórica, capitalización por comprobantes o posiciones y deuda única con cálculo combinado.</span></div></div>}</section>

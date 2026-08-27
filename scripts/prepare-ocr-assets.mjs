@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { chmod, copyFile, mkdir } from "node:fs/promises";
 
 const output = new URL("../public/ocr/", import.meta.url);
 await mkdir(output, { recursive: true });
@@ -11,5 +11,6 @@ const assets = [
 ];
 
 await Promise.all(assets.map(([source, destination]) =>
-  copyFile(new URL(source, import.meta.url), new URL(destination, output)),
+  copyFile(new URL(source, import.meta.url), new URL(destination, output))
+    .then(() => chmod(new URL(destination, output), 0o644)),
 ));

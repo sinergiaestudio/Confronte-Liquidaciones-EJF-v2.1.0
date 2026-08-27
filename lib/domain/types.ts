@@ -54,6 +54,7 @@ export interface DocumentMetadata {
   suitStartDate?: string;
   notificationDate?: string;
   liquidationDate?: string;
+  interestCutoffDate?: string;
   declaredTotal?: number;
 }
 
@@ -160,6 +161,7 @@ export interface RecalculatedRow {
   actualCapital?: number;
   capitalDifference?: number;
   expectedResarcitorio: number;
+  certifiedResarcitorio?: number;
   actualResarcitorio?: number;
   resarcitorioDifference?: number;
   expectedPunitorio: number;

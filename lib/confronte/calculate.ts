@@ -136,20 +136,48 @@ function calculateStandard(
 
   const rows: RecalculatedRow[] = !suitStart || !liquidationDate ? [] : rowsByUnion(constancia, liquidacion).flatMap(({ source, actual, constancia: sourceConstancia }) => {
     if (!source.dueDate) return [];
-    const res = calculateInterest(source.capital, addDays(source.dueDate, 1), addDays(suitStart, -1), "resarcitorio");
+    const historicalCutoff = constancia.profile === "agip_historica"
+      ? constancia.metadata.interestCutoffDate
+      : undefined;
+    const certifiedResarcitorio = historicalCutoff && sourceConstancia?.total !== undefined
+      ? roundMoney(Math.max(0, sourceConstancia.total - sourceConstancia.capital))
+      : undefined;
+    const resFrom = certifiedResarcitorio !== undefined && historicalCutoff
+      ? addDays(historicalCutoff, 1)
+      : addDays(source.dueDate, 1);
+    const resTo = addDays(suitStart, -1);
+    const res: InterestCalculation = resFrom <= resTo
+      ? calculateInterest(source.capital, resFrom, resTo, "resarcitorio")
+      : {
+          capital: source.capital,
+          from: resFrom,
+          to: resTo,
+          kind: "resarcitorio",
+          interest: 0,
+          tranches: [],
+          covered: true,
+          uncoveredDates: [],
+        };
     const pun = calculateInterest(source.capital, suitStart, addDays(liquidationDate, -1), "punitorio");
-    const expectedTotal = sumMoney([source.capital, res.interest, pun.interest]);
+    const expectedResarcitorio = sumMoney([certifiedResarcitorio, res.interest]);
+    const expectedTotal = sumMoney([source.capital, expectedResarcitorio, pun.interest]);
     const actualTotal = actualRowTotal(actual);
     const notes: string[] = [];
     if (!sourceConstancia) notes.push("Renglón tomado de la liquidación porque no fue reconstruido en la constancia.");
+    if (certifiedResarcitorio !== undefined && historicalCutoff) {
+      notes.push(`El resarcitorio parte del interés certificado al ${historicalCutoff}; sólo se recalcula su continuación.`);
+    } else if (constancia.profile === "agip_historica") {
+      notes.push("No pudo reconstruirse el corte histórico; el resarcitorio se recalculó íntegramente desde el vencimiento.");
+    }
     return [{
       key: source.key,
       capital: source.capital,
       actualCapital: actual?.capital,
       capitalDifference: actual?.capital === undefined ? undefined : roundMoney(actual.capital - source.capital),
-      expectedResarcitorio: res.interest,
+      expectedResarcitorio,
+      certifiedResarcitorio,
       actualResarcitorio: actual?.resarcitorio,
-      resarcitorioDifference: actual?.resarcitorio === undefined ? undefined : roundMoney(actual.resarcitorio - res.interest),
+      resarcitorioDifference: actual?.resarcitorio === undefined ? undefined : roundMoney(actual.resarcitorio - expectedResarcitorio),
       expectedPunitorio: pun.interest,
       actualPunitorio: actual?.punitorio,
       punitorioDifference: actual?.punitorio === undefined ? undefined : roundMoney(actual.punitorio - pun.interest),

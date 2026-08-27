@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img alt="versión" src="https://img.shields.io/badge/versión-2.1.0-821529">
+  <img alt="versión" src="https://img.shields.io/badge/versión-2.2.0-821529">
   <img alt="Next y TypeScript" src="https://img.shields.io/badge/Next%20%2B%20TypeScript-aplicación-365F91">
   <img alt="OCR local" src="https://img.shields.io/badge/OCR-español%20local-2F7D5C">
   <img alt="PWA" src="https://img.shields.io/badge/PWA-instalable-B99655">
@@ -54,7 +54,7 @@ La aplicación no se limita a declarar si dos totales coinciden. Separa el traba
 
 | Capa | Control | Evidencia visible |
 |---|---|---|
-| **Identidad** | Contribuyente, certificado, adjudicación y datos generales. | Comparación de metadatos extraídos y corregidos. |
+| **Identidad** | Certificado, adjudicación y datos generales del documento. | Comparación de metadatos extraídos y corregidos. |
 | **Integridad nominal** | Posiciones, comprobantes, capitales, vencimientos y filas faltantes. | Grilla editable y recuperación desde el documento contraparte. |
 | **Tipo de ejecución** | Estándar, capitalización por facturas, capitalización por posiciones o deuda única. | Perfil detectado y reglas aplicadas. |
 | **Intereses** | Resarcitorios, punitorios, capitalización y tramos posteriores. | Fechas, días, tasa mensual, capital base e importe por tramo. |
@@ -79,7 +79,7 @@ La extracción documental combina:
 - `pdf.js` para texto y coordenadas;
 - reconstrucción de renglones por posición visual;
 - detección de documentos escaneados;
-- OCR en español ejecutado localmente;
+- OCR en español ejecutado localmente, con resolución reforzada para constancias históricas;
 - parsers específicos por perfil;
 - niveles de confianza y bloqueos explícitos;
 - edición humana antes de aceptar la lectura.
@@ -103,6 +103,8 @@ Cada desarrollo expone:
 - interés del tramo;
 - total acumulado;
 - diferencia respecto del importe informado.
+
+En las constancias AGIP históricas, el motor no desecha el coeficiente ya certificado. Separa el **interés incorporado a la constancia hasta “SALDO IMPAGO AL”** y recalcula únicamente la continuación hasta el inicio del juicio. Ambas partes quedan visibles en la ecuación de cada posición.
 
 La cobertura vigente del motor termina el **31/12/2026**. La aplicación bloquea el cálculo cuando las tasas no cubren íntegramente el período y no extrapola valores futuros.
 
@@ -192,6 +194,9 @@ La regla general de tasas desde 2023 se mantiene aislada en `lib/confronte/rates
 
 - [Resolución 4323/MHFGC/2022](https://www.agip.gob.ar/normativa/resoluciones/2022/mhfgc/resolucion-n-4323-mhfgc--2022)
 - [Resolución 360/AGIP/2022](https://boletinoficial.buenosaires.gob.ar/normativaba/norma/615104)
+- [Calculador oficial de intereses del Consejo de la Magistratura](https://consejo.jusbaires.gob.ar/servicios/calculo-de-interes/)
+
+Las tasas del primer y segundo semestre de 2026 fueron contrastadas nuevamente el 27/08/2026. La cobertura continúa cerrada al 31/12/2026: no se extrapolan tasas a períodos futuros.
 
 ## Repositorios relacionados
 

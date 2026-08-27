@@ -15,11 +15,11 @@ import {
 import type { ExtractionResult } from "../lib/domain/types";
 import { parseDocument } from "../lib/parsers/parse-document";
 
-function extraction(text: string): ExtractionResult {
+function extraction(text: string, mode: "texto" | "ocr" = "texto"): ExtractionResult {
   return {
-    pages: [{ pageNumber: 1, text, characterCount: text.replace(/\s/g, "").length, source: "texto" }],
+    pages: [{ pageNumber: 1, text, characterCount: text.replace(/\s/g, "").length, source: mode }],
     text,
-    mode: "texto",
+    mode,
     needsOcr: false,
     quality: 0.98,
     fingerprint: "synthetic-fixture",
@@ -73,6 +73,30 @@ test("reconstruye y confronta una pareja estándar", () => {
   assert.equal(result.rowMatches.length, 2);
   assert.equal(result.rowMatches.every((row) => row.status === "ok"), true);
   assert.equal(result.checks.some((check) => check.status === "critical"), false);
+});
+
+test("reconoce una liquidación aunque el OCR omita el título y conserva sus cuatro columnas", () => {
+  const parsed = parseDocument({
+    fileName: "liquidacion-ocr.pdf",
+    fileSize: 100,
+    extraction: extraction(`
+Detalle de Liquidación
+Posición Concepto Vencimiento Imp. Nominal Interes Resacitorios Interes Punitorios Total
+2016/6 5229-DAGJ 20/12/2016 635,36 473,34 3.191,20 4.209,90
+2017/5 5229-DAGJ 20/10/2017 819,28 364,58 4.114,96 5.298,82
+Subtotal 1.454,64 837,92 7.306,16 9.598,72
+TOTAL: 9.598,72
+`, "ocr"),
+  });
+
+  assert.equal(parsed.kind, "liquidacion");
+  assert.equal(parsed.profile, "estandar");
+  assert.equal(parsed.rows.length, 2);
+  assert.equal(parsed.rows[0].resarcitorio, 473.34);
+  assert.equal(parsed.rows[0].punitorio, 3_191.2);
+  assert.equal(parsed.rows[0].total, 4_299.9);
+  assert.deepEqual(parsed.rows[0].inferredFields, ["total"]);
+  assert.equal(parsed.rows[1].total, 5_298.82);
 });
 
 test("ignora CUIT y razón social y confronta por certificado y deuda", () => {
@@ -175,11 +199,62 @@ test("repara una cuota histórica imposible y deja rastro de inferencia", () => 
   assert.equal(parsed.rows[2].position, "2008-01");
 });
 
+test("reconstruye el corte de una constancia histórica y continúa el resarcitorio sin recalcular lo certificado", () => {
+  const historical = parseDocument({
+    fileName: "constancia-historica-ocr.pdf",
+    fileSize: 100,
+    extraction: extraction(`CONSTANCIA DE DEUDA
+DIRECCION GENERAL DE RENTAS
+DOMINIO DEMO123
+2013 06 9/12/2013 $ 255,64 2,7500 703,01
+2016 03 21/06/2016 $ 635,36 1,8999 1.207,18
+2016 04 19/08/2016 $ 635,36 1/8399 1.169, 06
+2016 05 20/10/2016 $ 635,36 1,7799 1.130,94
+2016 06 20/12/2016 $ 835,36 1,7200 1.092,82
+2017 [1] 21/02/2011 $ 819,28 1,6599 1.360,00
+2017 a2 21/04/2017 $ 819,28 1/6000 1.310/85
+2017 03 21/06/2017 $ 819,28 1/5399 1.26169
+e 2017 04 22/08/2017 $ 819,28 1,4799 1.212,53
+a 2017 05 20/10/2017 $ 818,28 1/4200 1.163/38
+2017 06 21/12/2017 $ 819128 1/3599 1.144,22
+SALDO IMPAGO AL 2018-11-30 $ 12.725,68`, "ocr"),
+  });
+
+  assert.equal(historical.profile, "agip_historica");
+  assert.equal(historical.metadata.interestCutoffDate, "2018-11-30");
+  assert.equal(historical.rows.length, 11);
+  assert.equal(historical.rows.find((row) => row.key === "2016-06")?.capital, 635.36);
+  assert.equal(historical.rows.find((row) => row.key === "2017-01")?.dueDate, "2017-02-21");
+  assert.equal(historical.rows.find((row) => row.key === "2017-05")?.capital, 819.28);
+  assert.equal(historical.rows.find((row) => row.key === "2017-06")?.total, 1_114.22);
+
+  const singleHistorical = { ...historical, rows: [historical.rows.find((row) => row.key === "2016-03")!] };
+  const liquidation = parseDocument({
+    fileName: "liquidacion.pdf",
+    fileSize: 100,
+    extraction: extraction(`Liquidación Mandatario
+Adjudicación: 999
+Fecha Liquidación: 17/03/2026 Fecha Inicio de Jucio: 26/12/2018
+Detalle de Liquidación
+Posición Concepto Vencimiento Imp. Nominal Interes Resacitorios Interes Punitorios Total
+2016/3 5229-DAGJ 21/06/2016 635,36 587,70 3.191,20 4.414,26
+TOTAL: 4.414,26`),
+  });
+  const calculation = recalculatePair(singleHistorical, liquidation);
+  assert.equal(calculation.rows[0].certifiedResarcitorio, 571.82);
+  assert.equal(calculation.rows[0].expectedResarcitorio, 587.7);
+  assert.equal(calculation.rows[0].actualResarcitorio, 587.7);
+});
+
 test("usa las tasas 2026 corregidas y no extrapola a 2027", () => {
   const h2 = calculateInterest(100_000, "2026-07-01", "2026-07-30", "punitorio");
   assert.equal(h2.covered, true);
   assert.equal(h2.tranches.length, 1);
   assert.ok(Math.abs(h2.interest - 3_866) < 0.001);
+  const officialMonthPunitorio = calculateInterest(100_000, "2026-07-01", "2026-07-31", "punitorio");
+  const officialMonthResarcitorio = calculateInterest(100_000, "2026-07-01", "2026-07-31", "resarcitorio");
+  assert.equal(officialMonthPunitorio.interest, 3_994.87);
+  assert.equal(officialMonthResarcitorio.interest, 2_663.24);
   const uncovered = calculateInterest(100_000, "2026-12-20", "2027-01-10", "resarcitorio");
   assert.equal(uncovered.covered, false);
 });
