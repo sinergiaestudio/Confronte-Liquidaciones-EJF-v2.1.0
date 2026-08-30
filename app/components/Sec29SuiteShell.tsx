@@ -24,6 +24,13 @@ const MODULES = [
   },
   {
     group: "Automatización EJE",
+    label: "Creador de Lotes - Actuaciones",
+    detail: "Borradores por expediente",
+    icon: "▦",
+    href: `${BASE}/herramientas-j15sec29/#lotes-actuaciones`,
+  },
+  {
+    group: "Automatización EJE",
     label: "Creador de Lotes - Cédulas",
     detail: "Del PDF al lote de notificaciones",
     icon: "✉",
