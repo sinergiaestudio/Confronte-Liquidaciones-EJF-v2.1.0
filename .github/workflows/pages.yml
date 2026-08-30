@@ -29,6 +29,8 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
         run: npm run build:pages
+      - name: Verificar menú común SEC29
+        run: node scripts/verify-suite-menu.mjs out
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./out
