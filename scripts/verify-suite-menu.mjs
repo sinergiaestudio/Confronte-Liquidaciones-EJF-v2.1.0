@@ -27,6 +27,8 @@ const required = [
   "Creador de Lotes - Actuaciones",
   "Creador de Lotes - Cédulas",
   "Confronte de Liquidaciones EJF",
+  "Sistema de Actuaciones Judiciales",
+  "biblioteca-judicial-inteligente.arielmarcelogomez7.chatgpt.site",
   "#procesadores",
   "#actuaciones-lote",
   "#lotes-actuaciones",
@@ -40,4 +42,4 @@ if (missing.length) {
   process.exit(1);
 }
 
-console.log("Menú SEC29 verificado: cinco módulos y destinos canónicos presentes.");
+console.log("Menú SEC29 verificado: módulos especializados y acceso unificado IA JUDICIAL presentes.");

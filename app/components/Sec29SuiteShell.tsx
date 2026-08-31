@@ -5,9 +5,17 @@ import { useEffect, useState } from "react";
 type Theme = "light" | "dark";
 
 const BASE = "https://sinergiaestudio.github.io";
+const IA_JUDICIAL = "https://biblioteca-judicial-inteligente.arielmarcelogomez7.chatgpt.site";
 const STORAGE_KEY = "sec29-theme";
 
 const MODULES = [
+  {
+    group: "IA JUDICIAL",
+    label: "Sistema de Actuaciones Judiciales",
+    detail: "Entrada unificada · acceso autenticado",
+    icon: "IA",
+    href: IA_JUDICIAL,
+  },
   {
     group: "Mensajería y reportes",
     label: "Actuaciones y vencimientos",

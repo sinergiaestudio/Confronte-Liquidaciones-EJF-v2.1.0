@@ -13,13 +13,15 @@
   ·
   <a href="https://confronte-liquidaciones-ejf.arielmarcelogomez7.chatgpt.site">Abrir aplicación principal</a>
   ·
+  <a href="https://biblioteca-judicial-inteligente.arielmarcelogomez7.chatgpt.site">Sistema de Actuaciones Judiciales</a>
+  ·
   <a href="https://sinergiaestudio.github.io/herramientas-j15sec29/">Herramientas SEC29</a>
   ·
   <a href="#privacidad-y-alcance">Privacidad</a>
 </p>
 
 <p align="center">
-  <img alt="versión" src="https://img.shields.io/badge/versión-2.2.0-821529">
+  <img alt="versión" src="https://img.shields.io/badge/versión-2.2.1-821529">
   <img alt="Next y TypeScript" src="https://img.shields.io/badge/Next%20%2B%20TypeScript-aplicación-365F91">
   <img alt="OCR local" src="https://img.shields.io/badge/OCR-español%20local-2F7D5C">
   <img alt="PWA" src="https://img.shields.io/badge/PWA-instalable-B99655">

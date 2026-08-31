@@ -1,4 +1,4 @@
-const CACHE_NAME = "confronte-ejf-v2.2.0";
+const CACHE_NAME = "confronte-ejf-v2.2.1";
 const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const scoped = (path) => `${SCOPE_PATH}${path}`;
 const APP_SHELL = [

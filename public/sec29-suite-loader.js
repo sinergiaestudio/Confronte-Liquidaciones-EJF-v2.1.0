@@ -91,7 +91,7 @@
   document.head.appendChild(style);
 
   const shell = document.createElement("script");
-  shell.src = "https://sinergiaestudio.github.io/Cedulas-EJE-v1.0/sec29-suite-shell.js?v=64";
+  shell.src = "https://sinergiaestudio.github.io/Cedulas-EJE-v1.0/sec29-suite-shell.js?v=660";
   shell.defer = true;
   document.head.appendChild(shell);
 })();

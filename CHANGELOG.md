@@ -1,5 +1,12 @@
 # Historial de cambios
 
+## 2.2.1 — 2026-08-31
+
+### Integración IA JUDICIAL
+
+- Se incorpora en el menú compartido el acceso al Sistema de Actuaciones Judiciales como entrada unificada.
+- Se mantiene Confronte como aplicación independiente, sin compartir documentos, estado ni sesión.
+
 ## 2.2.0 — 2026-08-27
 
 ### Constancias históricas y OCR
