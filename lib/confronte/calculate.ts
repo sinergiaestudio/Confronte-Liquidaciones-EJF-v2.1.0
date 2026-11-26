@@ -224,12 +224,13 @@ function calculateCapitalization(
     messages.push("La capitalización requiere inicio de juicio, notificación de demanda y fecha de liquidación.");
   }
 
+  const splitAtStart = Boolean(liquidacion.special?.priorTranches?.length);
   const rows: RecalculatedRow[] = !suitStart || !notificationDate || !liquidationDate
     ? []
     : rowsForCapitalization(constancia, liquidacion).flatMap(({ source, actual, constancia: sourceConstancia }) => {
         if (!source.dueDate) return [];
         const res = calculateInterest(source.capital, addDays(source.dueDate, 1), suitStart, "resarcitorio");
-        const pun = calculateInterest(source.capital, addDays(suitStart, 1), notificationDate, "punitorio");
+        const pun = calculateInterest(source.capital, splitAtStart ? suitStart : addDays(suitStart, 1), splitAtStart ? addDays(notificationDate, -1) : notificationDate, "punitorio");
         const expectedTotal = sumMoney([source.capital, res.interest, pun.interest]);
         const actualTotal = actualRowTotal(actual);
         const notes: string[] = [];
@@ -263,7 +264,7 @@ function calculateCapitalization(
   const expectedPunitorio = sumMoney(rows.map((row) => row.expectedPunitorio));
   const expectedCapitalized = sumMoney([totalCapital, expectedResarcitorio, expectedPunitorio]);
   const post = notificationDate && liquidationDate
-    ? calculateInterest(expectedCapitalized, addDays(notificationDate, 1), liquidationDate, "punitorio")
+    ? calculateInterest(expectedCapitalized, splitAtStart ? notificationDate : addDays(notificationDate, 1), splitAtStart ? addDays(liquidationDate, -1) : liquidationDate, "punitorio")
     : { interest: 0, tranches: [] as InterestTranche[], covered: false };
   const expectedTotal = sumMoney([expectedCapitalized, post.interest]);
   const actualPunitorioFromRows = sumOptional(rows.map((row) => row.actualPunitorio));
@@ -275,7 +276,7 @@ function calculateCapitalization(
     covered: rows.length > 0 && rows.every((row) => row.covered) && post.covered,
     totalCapital,
     expectedResarcitorio,
-    actualResarcitorio: sumOptional(rows.map((row) => row.actualResarcitorio)),
+    actualResarcitorio: liquidacion.special?.resarcitorioDeclared ?? sumOptional(rows.map((row) => row.actualResarcitorio)),
     expectedPunitorio,
     actualPunitorio: liquidacion.special?.priorPunitorioDeclared ?? actualPunitorioFromRows,
     expectedCapitalized,
