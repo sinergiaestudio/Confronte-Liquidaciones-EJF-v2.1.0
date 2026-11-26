@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { SpecialReview, DocumentSources, SheetFields } from "./SpecialReview";
+import { invoiceAudit } from "../../lib/confronte/invoice-audit";
 import { recalculatePair } from "../../lib/confronte/calculate";
 import { pairDocuments } from "../../lib/confronte/pairing";
 import {
@@ -186,7 +188,7 @@ function MetadataEditor({ document, onChange }: { document: ParsedDocument; onCh
         ...(isCapitalization ? [{ key: "notificationDate" as const, label: "Notificación de demanda", value: document.metadata.notificationDate }] : []),
         { key: "liquidationDate" as const, label: "Liquidación", value: document.metadata.liquidationDate },
       ]
-    : document.profile === "agip_historica"
+    : (document.profile === "agip_historica" || document.metadata.interestCutoffDate)
       ? [{ key: "interestCutoffDate" as const, label: "Intereses certificados al", value: document.metadata.interestCutoffDate }]
       : [{ key: "documentDate" as const, label: "Fecha del documento", value: document.metadata.documentDate }];
 
@@ -290,6 +292,8 @@ function DocumentReview({ title, document, counterpart, onChange }: {
       {document.issues.length > 0 && <div className="issue-list">{document.issues.map((issue) => <div className={`issue issue--${issue.severity}`} key={issue.id}><Icon name={issue.severity === "critical" ? "warning" : "info"} /><div><strong>{issue.title}</strong><span>{issue.detail}</span></div></div>)}</div>}
       {missingCounterpartRows.length > 0 && <div className="recovery-bar"><div><Icon name="refresh" /><span><strong>{missingCounterpartRows.length} renglón{missingCounterpartRows.length === 1 ? "" : "es"} visible{missingCounterpartRows.length === 1 ? "" : "s"} solo en el otro documento</strong><small>Puede crear filas de revisión con clave, fecha y capital. Los intereses quedarán vacíos.</small></span></div><button type="button" onClick={completeFromCounterpart}>Completar desde contraparte</button></div>}
       <MetadataEditor document={document} onChange={onChange} />
+      <DocumentSources doc={document} />
+      <SheetFields doc={document} change={onChange} />
       <ReviewTable document={document} onChange={onChange} />
       <div className="review-card__footer"><p><Icon name="info" /> Los campos amarillos o inferidos necesitan control humano.</p><label className="confirm-check"><input type="checkbox" checked={document.reviewed} onChange={(event) => onChange({ ...document, reviewed: event.target.checked })} /><span><Icon name="check" /> Revisé los datos de este documento</span></label></div>
     </article>
@@ -414,7 +418,7 @@ function PositionDetails({ rows }: { rows: RecalculatedRow[] }) {
 }
 
 function sanitizeImportedDocument(raw: ParsedDocument): ParsedDocument {
-  const reparsed = raw.extraction ? parseDocument({ fileName: raw.fileName, fileSize: raw.fileSize, extraction: raw.extraction }) : raw;
+  const reparsed = raw.extraction ? parseDocument({ fileName: raw.fileName, fileSize: raw.fileSize, extraction: raw.extraction, preferredKind: raw.kind }) : raw;
   const metadata = {
     adjudication: raw.metadata?.adjudication ?? reparsed.metadata.adjudication,
     certificate: raw.metadata?.certificate ?? reparsed.metadata.certificate,
@@ -452,7 +456,9 @@ export function ConfronteApp() {
   const totalDifference = calculation?.actualTotal === undefined ? undefined : difference(calculation.actualTotal, calculation.expectedTotal);
   const calculationTolerance = roundMoney(Math.abs(calculation?.actualTotal ?? 0) * 0.05);
   const calculationWithinTolerance = totalDifference !== undefined && Math.abs(totalDifference) <= calculationTolerance;
-  const finalTrustworthy = Boolean(pairing?.reliable && allReviewed && calculationReady && calculationCovered && calculationWithinTolerance);
+  const invoice = calculation?.scenario === "capitalizacion_facturas" && ordered;
+  const specialAudit = invoice && calculation ? invoiceAudit(invoice.constancia, invoice.liquidacion, calculation) : undefined;
+  const finalTrustworthy = specialAudit ? specialAudit.consistent && allReviewed : Boolean(pairing?.reliable && allReviewed && calculationReady && calculationCovered && calculationWithinTolerance);
 
   const setSlot = (side: Side, update: SlotState | ((current: SlotState) => SlotState)) => setSlots((current) => ({ ...current, [side]: typeof update === "function" ? update(current[side]) : update }));
   const processFile = async (side: Side, file: File) => {
@@ -463,7 +469,7 @@ export function ConfronteApp() {
     try {
       let extraction = await extractPdfText(file, updateProgress);
       if (extraction.needsOcr) extraction = await extractPdfWithOcr(file, updateProgress);
-      const document = parseDocument({ fileName: file.name, fileSize: file.size, extraction });
+      const document = parseDocument({ fileName: file.name, fileSize: file.size, extraction, preferredKind: side });
       setSlot(side, { file, document, status: "ready", progress: 1, message: "Documento analizado" });
     } catch (error) {
       setSlot(side, { file, status: "error", progress: 0, error: error instanceof Error ? error.message : "No fue posible leer el PDF." });
@@ -476,7 +482,7 @@ export function ConfronteApp() {
     const updateProgress = (message: string, progress: number) => setSlot(side, (current) => ({ ...current, message, progress }));
     try {
       const extraction = await extractPdfWithOcr(file, updateProgress);
-      const document = parseDocument({ fileName: file.name, fileSize: file.size, extraction });
+      const document = parseDocument({ fileName: file.name, fileSize: file.size, extraction, preferredKind: side });
       setSlot(side, { file, document, status: "ready", progress: 1, message: "OCR terminado" });
     } catch (error) {
       setSlot(side, { file, status: "error", progress: 0, error: error instanceof Error ? error.message : "El OCR local no pudo completarse." });
@@ -510,7 +516,7 @@ export function ConfronteApp() {
     download(`confronte-${new Date().toISOString().slice(0, 10)}.csv`, [header.join(";"), ...lines].join("\n"), "text/csv;charset=utf-8");
   };
 
-  const resultTitle = finalTrustworthy
+  const resultTitle = specialAudit ? specialAudit.missing.length ? "Confronte parcial · faltan datos" : specialAudit.differences.length ? "Diferencias en la planilla" : "Planilla reproducida · verificación procesal por separado" : finalTrustworthy
     ? "Confronte consistente y revisado"
     : !pairing?.reliable
       ? "Se detectaron diferencias que requieren revisión"
@@ -524,16 +530,17 @@ export function ConfronteApp() {
 
   return (
     <>
-      <header className="topbar"><div className="shell topbar__inner"><a className="brand" href="#inicio" aria-label="Ir al inicio"><span className="brand__mark">J15</span><span><strong>Juzgado N.º 15 · Secretaría N.º 29</strong><small>Herramientas internas · EJF</small></span></a><div className="topbar__actions"><span className="version-badge">v2.2</span><button className="header-button" type="button" onClick={() => sessionInput.current?.click()}><Icon name="archive" /> Abrir sesión</button><button className="header-button" type="button" onClick={exportSession} disabled={!left && !right}><Icon name="download" /> Guardar</button></div></div></header>
+      <header className="topbar"><div className="shell topbar__inner"><a className="brand" href="#inicio" aria-label="Ir al inicio"><span className="brand__mark">J15</span><span><strong>Juzgado N.º 15 · Secretaría N.º 29</strong><small>Herramientas internas · EJF</small></span></a><div className="topbar__actions"><span className="version-badge">v2.3</span><button className="header-button" type="button" onClick={() => sessionInput.current?.click()}><Icon name="archive" /> Abrir sesión</button><button className="header-button" type="button" onClick={exportSession} disabled={!left && !right}><Icon name="download" /> Guardar</button></div></div></header>
       <main id="inicio">
         <section className="hero"><div className="shell hero__grid"><div className="hero__copy"><p className="eyebrow eyebrow--gold">Control documental y cálculo trazable</p><h1>Confronte de<br /><em>liquidaciones EJF</em></h1><p className="hero__lead">Compare constancias de deuda y liquidaciones mandatarias con lectura de PDF, OCR local, revisión asistida y detalle de cada tramo de interés.</p><div className="privacy-chip"><Icon name="shield" /><span><strong>Procesamiento local</strong>Sus PDFs no se suben ni se almacenan.</span></div></div><aside className="hero__audit" aria-label="Criterios de control"><p className="eyebrow">Qué controla</p><ol><li><span>01</span><div><strong>Identidad documental</strong><small>Adjudicación o certificado.</small></div></li><li><span>02</span><div><strong>Integridad de la deuda</strong><small>Posiciones, vencimientos y capital con centavos.</small></div></li><li><span>03</span><div><strong>Intereses explicables</strong><small>Estándar, capitalización y deuda única.</small></div></li></ol></aside></div></section>
         <section className="workspace shell" aria-labelledby="workflow-title"><div className="section-heading"><div><p className="eyebrow">Flujo de trabajo</p><h2 id="workflow-title">Un confronte en tres etapas</h2></div><div className="stepper" aria-label="Progreso"><span className="is-active"><b>1</b>Cargar</span><i /><span className={left || right ? "is-active" : ""}><b>2</b>Revisar</span><i /><span className={bothReady ? "is-active" : ""}><b>3</b>Confrontar</span></div></div><div className="upload-grid"><UploadCard side="constancia" state={slots.constancia} onFile={(file) => processFile("constancia", file)} onRemove={() => setSlot("constancia", EMPTY_SLOT)} onOcr={() => rerunOcr("constancia")} /><div className="upload-connector"><Icon name="arrow" /></div><UploadCard side="liquidacion" state={slots.liquidacion} onFile={(file) => processFile("liquidacion", file)} onRemove={() => setSlot("liquidacion", EMPTY_SLOT)} onOcr={() => rerunOcr("liquidacion")} /></div>{!left && !right && <div className="empty-guidance"><Icon name="spark" /><div><strong>Perfiles documentales contemplados</strong><span>AGIP actual e histórica, capitalización por comprobantes o posiciones y deuda única con cálculo combinado.</span></div></div>}</section>
         {(left || right) && <section className="review-section"><div className="shell"><div className="section-heading section-heading--compact"><div><p className="eyebrow">Etapa 2</p><h2>Revise lo que leyó la aplicación</h2><p>La grilla es editable. Los importes se conservan con dos decimales y formato argentino.</p></div></div><div className="review-stack">{left && <DocumentReview title="Documento A" document={left} counterpart={right} onChange={(document) => updateDocument("constancia", document)} />}{right && <DocumentReview title="Documento B" document={right} counterpart={left} onChange={(document) => updateDocument("liquidacion", document)} />}</div></div></section>}
         {pairing && ordered && calculation && <section className="results-section" id="resultado"><div className="shell">
           <div className="scenario-ribbon"><Icon name="spark" /><span><strong>{SCENARIO_LABELS[calculation.scenario]}</strong>El método se eligió a partir de ambos documentos.</span></div>
-          <div className="result-banner"><div className={`result-seal result-seal--${finalTrustworthy ? "ok" : pairing.reliable ? "review" : "critical"}`}><Icon name={finalTrustworthy ? "check" : "warning"} /></div><div><p className="eyebrow">Etapa 3 · resultado</p><h2>{resultTitle}</h2><p>{finalTrustworthy ? "Los renglones coinciden y el cálculo queda dentro de la tolerancia explícita." : "Abra los resúmenes inferiores para localizar exactamente la fecha, el tramo o el componente que produce la diferencia."}</p></div><div className="score"><strong>{pairing.score}</strong><span>índice documental</span></div></div>
-          <div className="kpi-grid"><article><span>Capital de constancia</span><strong>{formatMoney(calculation.totalCapital)}</strong><small>{ordered.constancia.rows.length} renglones extraídos</small></article><article><span>Total liquidado</span><strong>{formatMoney(calculation.actualTotal)}</strong><small>Informado al {formatDate(ordered.liquidacion.metadata.liquidationDate ?? ordered.liquidacion.special?.punitorioTo)}</small></article><article className={!calculationWithinTolerance ? "kpi--alert" : ""}><span>Diferencia de recálculo</span><strong>{totalDifference === undefined ? "No cerrable" : formatMoney(totalDifference)}</strong><small>{calculationReady ? calculationCovered ? `Tolerancia 5%: ${formatMoney(calculationTolerance)}` : "Fuera de cobertura normativa" : "Faltan fechas o capital"}</small></article></div>
+          <div className="result-banner"><div className={`result-seal result-seal--${finalTrustworthy ? "ok" : pairing.reliable ? "review" : "critical"}`}><Icon name={finalTrustworthy ? "check" : "warning"} /></div><div><p className="eyebrow">Etapa 3 · resultado</p><h2>{resultTitle}</h2><p>{specialAudit ? "El detalle distingue los importes presentados, el recálculo y las comprobaciones necesarias para preparar el proyecto." : finalTrustworthy ? "Los renglones coinciden y el cálculo queda dentro de la tolerancia explícita." : "Abra los resúmenes inferiores para localizar exactamente la fecha, el tramo o el componente que produce la diferencia."}</p></div><div className="score"><strong>{pairing.score}</strong><span>índice documental</span></div></div>
+          <div className="kpi-grid"><article><span>Capital de constancia</span><strong>{formatMoney(calculation.totalCapital)}</strong><small>{ordered.constancia.rows.length} renglones extraídos</small></article><article><span>Total liquidado</span><strong>{formatMoney(calculation.actualTotal)}</strong><small>Informado al {formatDate(ordered.liquidacion.metadata.liquidationDate ?? ordered.liquidacion.special?.punitorioTo)}</small></article><article className={!calculationWithinTolerance ? "kpi--alert" : ""}><span>Diferencia de recálculo</span><strong>{totalDifference === undefined ? "No cerrable" : formatMoney(totalDifference)}</strong><small>{calculationReady ? calculationCovered ? specialAudit ? "Ver método de redondeo y diferencias por tramo" : `Tolerancia 5%: ${formatMoney(calculationTolerance)}` : "Fuera de cobertura normativa" : "Faltan fechas o capital"}</small></article></div>
           <div className="result-grid"><article className="result-card"><div className="result-card__heading"><div><p className="eyebrow">Identidad e integridad</p><h3>Controles cruzados</h3></div><span>{pairing.checks.filter((check) => check.status === "ok").length}/{pairing.checks.length}</span></div><div className="check-list">{pairing.checks.map((check) => <div className={`check-row check-row--${check.status}`} key={check.id}><span className="check-row__icon"><Icon name={check.status === "ok" ? "check" : check.status === "critical" ? "warning" : "info"} /></span><div><strong>{check.label}</strong><small>{check.detail}</small>{(check.left || check.right) && <code>{check.left ?? "—"} ↔ {check.right ?? "—"}</code>}</div></div>)}</div></article><article className="result-card"><div className="result-card__heading"><div><p className="eyebrow">Renglones</p><h3>Coincidencia nominal</h3></div><span>{pairing.rowMatches.filter((row) => row.status === "ok").length}/{pairing.rowMatches.length}</span></div><div className="position-summary"><div><strong>{pairing.rowMatches.filter((row) => row.status === "ok").length}</strong><span>Coinciden</span></div><div><strong>{pairing.rowMatches.filter((row) => row.status === "missing").length}</strong><span>Faltantes</span></div><div><strong>{pairing.rowMatches.filter((row) => row.status === "critical").length}</strong><span>Diferencias</span></div></div><div className="mini-table">{pairing.rowMatches.slice(0, 8).map((row) => <div key={row.key}><code>{row.key}</code><span>{formatMoney(row.constancia?.capital ?? row.liquidacion?.capital)}</span><Icon name={row.status === "ok" ? "check" : "warning"} /></div>)}{pairing.rowMatches.length > 8 && <p>+ {pairing.rowMatches.length - 8} renglones en el detalle desplegable</p>}</div></article></div>
+          {invoice && <SpecialReview key={JSON.stringify([ordered.constancia.id, ordered.liquidacion.id, ordered.constancia.metadata, ordered.liquidacion.metadata, ordered.constancia.rows, ordered.liquidacion.rows, ordered.liquidacion.special])} cert={ordered.constancia} sheet={ordered.liquidacion} calc={calculation} />}
           <GeneralReport calculation={calculation} constancia={ordered.constancia} liquidacion={ordered.liquidacion} />
           {calculation.rows.length > 0 && <PositionDetails rows={calculation.rows} />}
           <div className="export-bar"><div><strong>Conserve evidencia del control</strong><span>La sesión guarda datos extraídos y correcciones, nunca los PDFs.</span></div><div><button type="button" className="button button--secondary" onClick={exportCsv}><Icon name="download" /> Exportar CSV</button><button type="button" className="button button--secondary" onClick={() => window.print()}><Icon name="print" /> Imprimir informe</button><button type="button" className="button button--primary" onClick={exportSession}><Icon name="archive" /> Guardar sesión</button></div></div>

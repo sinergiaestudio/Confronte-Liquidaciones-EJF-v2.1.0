@@ -10,7 +10,7 @@ interface PositionedText {
   y: number;
 }
 
-function rebuildLines(items: PositionedText[]): string {
+function rebuildLines(items: PositionedText[]) {
   const lines: Array<{ y: number; items: PositionedText[] }> = [];
   const sorted = [...items].sort((left, right) => right.y - left.y || left.x - right.x);
   for (const item of sorted) {
@@ -24,9 +24,10 @@ function rebuildLines(items: PositionedText[]): string {
   }
   return lines
     .sort((left, right) => right.y - left.y)
-    .map((line) => line.items.sort((left, right) => left.x - right.x).map((item) => item.text).join(" ").replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .join("\n");
+    .map((line) => {
+      const cells = line.items.sort((left, right) => left.x - right.x);
+      return { x: Math.round(cells[0].x), y: Math.round(-line.y), text: cells.map(cell => cell.text).join(" ").replace(/\s+/g, " ").trim() };
+    });
 }
 
 function fingerprint(bytes: Uint8Array): string {
@@ -53,20 +54,24 @@ export async function extractPdfText(file: File, onProgress?: ExtractionProgress
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     onProgress?.(`Leyendo página ${pageNumber} de ${pdf.numPages}`, 0.08 + (pageNumber / pdf.numPages) * 0.72);
     const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
     const items: PositionedText[] = content.items.flatMap((item) => {
       if (!("str" in item) || !item.str.trim()) return [];
-      return [{ text: item.str, x: item.transform[4], y: item.transform[5] }];
+      const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+      return [{ text: item.str, x, y: -y }];
     });
-    const text = rebuildLines(items);
-    pages.push({ pageNumber, text, characterCount: text.replace(/\s/g, "").length, source: "texto" });
+    const lines = rebuildLines(items);
+    const text = lines.map(line => line.text).join("\n");
+    pages.push({ pageNumber, lines, width: viewport.width, height: viewport.height, text, characterCount: text.replace(/\s/g, "").length, source: "texto" });
   }
 
   const text = pages.map((page) => page.text).join("\n\f\n");
   const usefulPages = pages.filter((page) => page.characterCount >= 80).length;
   const totalCharacters = pages.reduce((sum, page) => sum + page.characterCount, 0);
   const quality = clamp((usefulPages / Math.max(1, pages.length)) * 0.65 + Math.min(1, totalCharacters / Math.max(300, pages.length * 650)) * 0.35);
-  const needsOcr = usefulPages < Math.ceil(pages.length * 0.6) || totalCharacters < 120;
+  const hasTable = pages.some(page => /(?:FAC|FAE|NDB)[^\n]{1,45}\d+\s+\d{1,2}[/-]\d{1,2}[/-]\d{2}/i.test(page.text));
+  const needsOcr = !hasTable && (usefulPages < Math.ceil(pages.length * 0.6) || totalCharacters < 120);
   onProgress?.(needsOcr ? "El archivo necesita OCR local" : "Texto reconstruido", 1);
   return {
     pages,

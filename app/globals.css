@@ -422,3 +422,15 @@ code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.special-review { margin:1rem 0; }
+.special-review details,.document-sources { margin:1rem 0; }
+.special-review summary,.document-sources summary { cursor:pointer; font-weight:600; padding:.5rem 0; }
+.special-review fieldset { border:1px solid #d5d1c9; border-radius:.5rem; margin:1rem 0; padding:1rem; }
+.special-review p { margin:.7rem 0; }
+.special-review .process-check { display:flex; gap:.6rem; align-items:baseline; margin:.5rem 0; }
+.special-scroll,.document-sources pre { overflow:auto; max-height:26rem; }
+.special-scroll td,.special-scroll th { text-align:right; padding:.35rem .6rem; }
+.special-scroll td:first-child,.special-scroll th:first-child { text-align:left; }
+.document-sources pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.draft-page { max-width:52rem; background:white; padding:clamp(.8rem,3vw,2rem); color:#181818; margin:1rem 0; }

@@ -30,6 +30,9 @@ export interface AuditIssue {
 export interface ExtractedPage {
   pageNumber: number;
   text: string;
+  width?: number;
+  height?: number;
+  lines?: Array<{ text: string; x: number; y: number }>;
   characterCount: number;
   source: "texto" | "ocr";
 }
@@ -59,6 +62,10 @@ export interface DocumentMetadata {
 }
 
 export interface SpecialDocumentData {
+  resarcitorioDeclared?: number;
+  priorTranches?: Array<{ days: number; rate: number; interest?: number }>;
+  postDays?: number;
+  postRate?: number;
   priorPunitorioDeclared?: number;
   capitalizedDeclared?: number;
   postCapitalizationPunitorioDeclared?: number;
@@ -82,6 +89,8 @@ export interface DebtRow {
   resarcitorio?: number;
   punitorio?: number;
   total?: number;
+  reportedDays?: number;
+  reportedRate?: number;
   sourcePage?: number;
   confidence: number;
   inferredFields?: string[];

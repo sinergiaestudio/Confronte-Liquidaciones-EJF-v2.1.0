@@ -20,6 +20,7 @@ import type {
 } from "../domain/types";
 
 interface ParseInput {
+  preferredKind?: DocumentKind;
   fileName: string;
   fileSize: number;
   extraction: ExtractionResult;
@@ -55,7 +56,8 @@ function classify(text: string): { kind: DocumentKind; profile: DocumentProfile 
     /TOTAL CAPITALIZADO/.test(normalized) ||
     /PUNITORIOS? HASTA LA NOTIFICACION DE DEMANDA/.test(normalized) ||
     /PUNITORIO SOBRE INTERES CAPITALIZADO/.test(normalized);
-  const hasInvoiceStructure = /FACTURA|COMPROBANTE|NOTA DE (?:DEBITO|CREDITO)/.test(normalized);
+  const hasInvoiceStructure = /FACTURA|COMPROBANTE|NOTA DE (?:DEBITO|CREDITO)/.test(normalized) ||
+    /^(?:FAC|FAE|NDB)[^\n]{1,45}\d+\s+\d{1,2}\/\d{1,2}\/\d{2}/im.test(text);
   const isSpecialInvoiceCertificate =
     kind === "constancia" &&
     /CERTIFICADO DE DEUDA/.test(normalized) &&
@@ -115,6 +117,7 @@ function parseMetadata(text: string, kind: DocumentKind, profile: DocumentProfil
     /se expide[^\n]{0,100}?(\d{1,2}\s+d[ií]as?\s+del?\s+mes\s+de\s+[A-Za-záéíóúñ]+\s+de\s+\d{4})/i,
   ]));
   const interestCutoffDate = parseDate(firstMatch(text, [
+    /intereses del presente certificado se encuentran calculados al\s*:?\s*([\d/]+)/i,
     /SALDO\s+IMPAGO\s+AL\s*[:=\-]?\s*((?:19|20)\d{2}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-](?:19|20)\d{2})/i,
   ]));
 
@@ -155,6 +158,11 @@ function parseMetadata(text: string, kind: DocumentKind, profile: DocumentProfil
 
   if (kind === "constancia" && profile === "estandar" && declaredTotal === undefined) {
     declaredTotal = parseMoney(firstMatch(text, [/Suma adeudada:\s*([\d.,]+)/i]));
+  }
+
+  if (kind === "constancia" && profile === "capitalizacion_facturas") {
+    const certificateTotal = firstMatch(text, [/TOTAL A DEPOSITAR[^$]{0,500}\$\s*([\d.,]+)/i]);
+    declaredTotal = parseMoney(certificateTotal) ?? declaredTotal;
   }
 
   return {
@@ -235,7 +243,19 @@ function parseSpecialData(
     .map((match) => parseMoney(match[1]))
     .filter((value): value is number => value !== undefined);
 
+  const subtotal = text.match(/^\s*\$\s*[\d.,]+\s+\$\s*([\d.,]+)\s+\$\s*[\d.,]+\s*$/m);
+  const amounts = [...text.matchAll(/^INTERESES PUNITORIOS HASTA LA NOTIFICACI[ÓO]N[^\n]*?TASA\s+(\d+)\s*\$\s*([\d.,]+)/gim)];
+  const priorTranches = [...text.matchAll(/^(\d+)\s+D[ÍI]AS\s+([\d.,]+)%/gim)].map((m, index) => ({
+    days: Number(m[1]), rate: Number(m[2].replace(",", ".")),
+    interest: parseMoney(amounts.find(a => Number(a[1]) === index + 1)?.[2]),
+  }));
+  const postDays = postSection.match(/^D[ÍI]AS[^\n]*?LIQUIDACI[ÓO]N\s+(\d+)\b/i);
+  const postRate = postSection.match(/^TASA APLICABLE[^\n%]*?([\d]+[.,]?[\d]*)\s*%/im);
   return {
+    ...(subtotal && { resarcitorioDeclared: parseMoney(subtotal[1]) }),
+    ...(priorTranches.length > 0 && { priorTranches }),
+    ...(postDays && { postDays: Number(postDays[1]) }),
+    ...(postRate && { postRate: Number(postRate[1].replace(",", ".")) }),
     priorPunitorioDeclared: punitorioTotals[0],
     capitalizedDeclared,
     postCapitalizationPunitorioDeclared: punitorioTotals.length > 1
@@ -466,14 +486,18 @@ function parseInvoiceRows(extraction: ExtractionResult, kind: DocumentKind): Deb
         notes.push("Fecha de mora inferida como presentación + 30 días; requiere revisión.");
       }
       const capital = values[0];
+      const reportedDays = match[4].match(/\$\s*[\d.,]+\s+(\d+)\s/);
+      const reportedRate = match[4].match(/([\d]+(?:[.,]\d+)?)\s*%/);
       const hasRate = /%/.test(match[4]);
-      const resarcitorio = kind === "liquidacion" && hasRate ? values.at(-1) : kind === "constancia" && values.length >= 2 ? values[1] : undefined;
+      const resarcitorio = kind === "liquidacion" && hasRate ? values[1] : kind === "constancia" && values.length >= 2 ? values[1] : undefined;
       const total = kind === "constancia" && values.length >= 3 ? values.at(-1) : undefined;
       rows.push({
         id: stableId(page.pageNumber, documentId, capital, rows.length),
         key: documentId,
         documentId,
         originalDocumentId,
+        reportedDays: reportedDays ? Number(reportedDays[1]) : undefined,
+        reportedRate: reportedRate ? Number(reportedRate[1].replace(",", ".")) : undefined,
         presentationDate,
         dueDate,
         capital,
@@ -610,12 +634,23 @@ function buildIssues(
 }
 
 export function parseDocument(input: ParseInput): ParsedDocument {
-  const { kind, profile } = classify(input.extraction.text);
-  const metadata = parseMetadata(input.extraction.text, kind, profile);
-  const special = parseSpecialData(input.extraction.text, kind, profile, metadata);
+  // An accompanying brief may quote an older certificate or another calculation.
+  const pages = input.extraction.pages;
+  const start = pages.findIndex(p => /^LIQUIDACI[ÓO]N MANDATARIOS?[^\n]*CAPITALIZACI[ÓO]N/im.test(p.text));
+  const end = start < 0 ? -1 : pages.findIndex((p, i) => i >= start && /^TOTAL\s*:?\s*\$\s*[\d.,]+\s*$/im.test(p.text));
+  const certificateStart = pages.findIndex(p => /CERTIFICO\b/i.test(p.text) && /CERTIFICADO DE DEUDA/i.test(p.text));
+  const combinedCertificate = start >= 0 && certificateStart >= 0 && input.preferredKind === "constancia";
+  const certificateEnd = combinedCertificate ? pages.findIndex((p,i) => i >= certificateStart && /TOTAL A DEPOSITAR/i.test(p.text)) : -1;
+  const selected = combinedCertificate
+    ? pages.slice(certificateStart, certificateEnd < 0 ? certificateStart + 1 : certificateEnd + 1)
+    : start < 0 ? pages : pages.slice(start, end < 0 ? undefined : end + 1);
+  const extraction = { ...input.extraction, pages: selected, text: selected.map(p => p.text).join("\n") };
+  const { kind, profile } = classify(extraction.text);
+  const metadata = parseMetadata(extraction.text, kind, profile);
+  const special = parseSpecialData(extraction.text, kind, profile, metadata);
   let rows: DebtRow[];
   if (profile === "capitalizacion_facturas") {
-    rows = parseInvoiceRows(input.extraction, kind);
+    rows = parseInvoiceRows(extraction, kind);
   } else if (profile === "deuda_unica") {
     rows = parseUniqueDebtRows(input.extraction, kind);
   } else if (profile === "agip_historica" && kind === "constancia") {
@@ -625,6 +660,10 @@ export function parseDocument(input: ParseInput): ParsedDocument {
   }
 
   const issues = buildIssues(input.extraction, kind, profile, metadata, rows, special);
+  if (profile === "capitalizacion_facturas" && kind === "liquidacion" && pages.filter(p => /^LIQUIDACI[ÓO]N MANDATARIOS?[^\n]*CAPITALIZACI[ÓO]N/im.test(p.text)).length > 1 &&
+      pages.filter(p => /^TOTAL\s*:?\s*\$\s*[\d.,]+\s*$/im.test(p.text)).length > 1) {
+    issues.push({ id: "multiple-sheets", severity:"critical", title:"Se detectaron varias liquidaciones", detail:"Cargue la planilla correspondiente al traslado para cotejar sus importes." });
+  }
   const metadataScore = [
     metadata.adjudication ?? metadata.certificate,
     metadata.caseNumber ?? metadata.taxOrConcept,
